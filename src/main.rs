@@ -6,6 +6,7 @@
 //!   game-translator [--config FILE] bench [--lang CODE] CASES.toml
 
 mod config;
+mod engine;
 mod llm;
 mod memory;
 mod ocr;
@@ -13,6 +14,7 @@ mod render;
 mod runtime;
 mod server;
 mod translate;
+mod web;
 
 use std::{
     collections::HashMap,
@@ -28,15 +30,16 @@ use axum::{
     body::Bytes,
     extract::{DefaultBodyLimit, Query, State},
     http::{StatusCode, header},
-    routing::post,
+    routing::get,
 };
-use base64::{Engine, engine::general_purpose::STANDARD as B64};
+use base64::{Engine as _, engine::general_purpose::STANDARD as B64};
 use image::{DynamicImage, ImageFormat, RgbaImage};
 use serde_json::{Value, json};
 use tracing::{info, warn};
 
 use crate::{
     config::Config,
+    engine::Engine,
     ocr::{Block, Ocr},
     render::Renderer,
     translate::Translator,
@@ -48,6 +51,8 @@ const NO_TEXT: &str = "No text found.";
 struct App {
     config: Config,
     client: reqwest::Client,
+    /// The local model or a remote provider, switchable from the web page.
+    engine: Arc<Engine>,
     ocr: Ocr,
     translator: Translator,
     renderer: Renderer,
@@ -90,7 +95,7 @@ impl App {
             .collect();
         let (translations, cached) = self
             .translator
-            .translate(&self.client, &self.config.translate, profile, label, lang, &texts)
+            .translate(&self.config.translate, &self.engine.backend(), profile, label, lang, &texts)
             .await
             .context("translation failed")?;
         let translate_ms = started.elapsed().as_millis() as u64 - ocr_ms;
@@ -125,6 +130,7 @@ fn main() -> anyhow::Result<()> {
 async fn run() -> anyhow::Result<()> {
     tracing_subscriber::fmt()
         .with_env_filter(std::env::var("RUST_LOG").unwrap_or_else(|_| "info,ort=warn".into()).as_str())
+        .with_writer(web::LogWriter)
         .init();
 
     let mut args: Vec<String> = std::env::args().skip(1).collect();
@@ -134,28 +140,38 @@ async fn run() -> anyhow::Result<()> {
     // must not mix test translations into it.
     let serving = matches!(args.first().map(String::as_str), None | Some("serve"));
     let data_dir = (serving && !config.data_dir.is_empty()).then(|| PathBuf::from(&config.data_dir));
+    let client = reqwest::Client::new();
     let app = Arc::new(App {
         renderer: Renderer::new(&config.render).context("cannot load font")?,
         ocr: Ocr::new(&config.ocr)?,
-        client: reqwest::Client::new(),
-        translator: Translator::new(data_dir),
+        engine: Engine::new(client.clone(), &config.translate)?,
+        translator: Translator::new(client.clone(), data_dir),
+        client,
         last_frame: Mutex::new(None),
         config,
     });
 
-    // Held until the command returns: dropping it stops the server we started.
+    // The server starts in the background so that the page shows its progress
+    // (first downloads); replay and bench need it before going on.
     let translates = !args.iter().any(|a| a == "--ocr-only");
-    let _server = match &app.config.translate.server {
-        Some(server) if translates => server::ensure(&app.client, &app.config.translate.backend.url, server).await?,
-        _ => None,
-    };
-
-    match args.first().map(String::as_str) {
-        None | Some("serve") => serve(app).await,
-        Some("replay") => replay(app, args.split_off(1)).await,
-        Some("bench") => bench(app, args.split_off(1)).await,
-        Some(other) => bail!("unknown command {other}"),
+    if serving {
+        app.engine.start_in_background();
+    } else if translates {
+        app.engine.start().await;
+        if let engine::Status::Failed(error) = app.engine.status() {
+            bail!("translation server: {error}");
+        }
     }
+
+    let result = match args.first().map(String::as_str) {
+        None | Some("serve") => serve(app.clone()).await,
+        Some("replay") => replay(app.clone(), args.split_off(1)).await,
+        Some("bench") => bench(app.clone(), args.split_off(1)).await,
+        Some(other) => Err(anyhow::anyhow!("unknown command {other}")),
+    };
+    // Stops the server we started.
+    app.engine.stop().await;
+    result
 }
 
 fn take_option(args: &mut Vec<String>, name: &str) -> Option<String> {
@@ -178,11 +194,12 @@ async fn serve(app: Arc<App>) -> anyhow::Result<()> {
     }
     let listen = app.config.listen.clone();
     let router = Router::new()
-        .route("/", post(handle_request))
+        .route("/", get(web::page).post(handle_request))
+        .merge(web::routes())
         .layer(DefaultBodyLimit::max(64 * 1024 * 1024))
         .with_state(app);
     let listener = tokio::net::TcpListener::bind(&listen).await?;
-    info!("listening on http://{listen}/");
+    info!("listening on http://{listen}/ (open it in a browser for the settings)");
     // Ctrl+C returns normally, so the translation server we started gets stopped.
     axum::serve(listener, router)
         .with_graceful_shutdown(async {
@@ -328,14 +345,15 @@ async fn bench(app: Arc<App>, mut args: Vec<String>) -> anyhow::Result<()> {
     let path = args.first().context("missing benchmark file")?;
     let file: BenchFile = toml::from_str(&std::fs::read_to_string(path)?)?;
     let profile = app.config.profile_for(&file.label);
-    println!("model: {} ({})", app.config.translate.backend.model, app.config.translate.backend.url);
+    let backend = app.engine.backend();
+    println!("model: {} ({})", backend.model, backend.url);
 
     let mut total_ms = 0;
     for case in &file.case {
         let started = Instant::now();
         let (translations, _) = app
             .translator
-            .translate(&app.client, &app.config.translate, profile, &file.label, &lang, &case.blocks)
+            .translate(&app.config.translate, &app.engine.backend(), profile, &file.label, &lang, &case.blocks)
             .await?;
         let ms = started.elapsed().as_millis();
         total_ms += ms;

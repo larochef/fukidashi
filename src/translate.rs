@@ -11,12 +11,13 @@ use regex::Regex;
 use serde_json::json;
 
 use crate::{
-    config::{Profile, TranslateConfig},
+    config::{Backend, Profile, TranslateConfig},
     llm,
     memory::GameMemory,
 };
 
 pub struct Translator {
+    client: reqwest::Client,
     /// Where game memories are saved; `None` keeps them in RAM only.
     data_dir: Option<PathBuf>,
     state: Mutex<State>,
@@ -31,16 +32,16 @@ struct State {
 }
 
 impl Translator {
-    pub fn new(data_dir: Option<PathBuf>) -> Self {
-        Self { data_dir, state: Mutex::default() }
+    pub fn new(client: reqwest::Client, data_dir: Option<PathBuf>) -> Self {
+        Self { client, data_dir, state: Mutex::default() }
     }
 
     /// Returns one translation per input text. `cached` in the result tells how
     /// many texts were served from memory.
     pub async fn translate(
         &self,
-        client: &reqwest::Client,
         config: &TranslateConfig,
+        backend: &Backend,
         profile: Option<&Profile>,
         label: &str,
         lang: &str,
@@ -84,7 +85,7 @@ impl Translator {
         // while still inside a string: what follows is notes, sometimes looping too.
         let (breaks, quotes) = (r"\n".repeat(8), r#"\""#.repeat(8));
         let stops = [breaks.as_str(), quotes.as_str(), r#"\"}"#];
-        let answer = llm::chat(client, &config.backend, messages, Some(response_schema(missing.len())), &stops).await?;
+        let answer = llm::chat(&self.client, backend, messages, Some(response_schema(missing.len())), &stops).await?;
         tracing::debug!(answer, "translation answer");
         let (parsed, names) = parse(&answer, missing.len());
 

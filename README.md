@@ -67,6 +67,24 @@ In the **AI Service** settings (under Settings, or Settings → Accessibility de
 Then bind a key in **Settings → Input → Hotkeys → AI Service**. The video
 driver must be `gl`, `glcore` or `vulkan` for the transparent overlay.
 
+## Settings page
+
+<http://localhost:4404/>, opened in a browser, shows the translation engine and lets you switch it
+while the app runs:
+
+- **Local model**: the GPU found, the llama.cpp build in use and the ones kept,
+  update settings, a button to look for a newer build, the server log.
+- **Remote provider**: any OpenAI-compatible endpoint (OpenRouter, a server on
+  another machine) with its model and API key; only the text of the screen is
+  sent, never the image. Switching to it stops the local server and frees its memory.
+- **Test the translation**: translates one line with the real request, so a
+  provider that rejects it shows up here rather than in the game.
+
+Choices made in the page are saved in `~/.config/game-translator/engine.toml`
+and override `config.toml`; the API key goes to `secrets.toml` next to it,
+readable by you only (the `GAME_TRANSLATOR_API_KEY` environment variable takes
+precedence and is never written).
+
 ## Configuration
 
 `config.toml` holds everything: OCR, translation model and prompt, layout.

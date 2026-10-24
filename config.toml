@@ -20,6 +20,10 @@ box_threshold = 0.5
 width = 960
 
 [translate]
+# "local": the model below, served by [translate.server]; "remote": the provider
+# of [translate.remote]. Both can be switched in the settings page
+# (http://localhost:4404/), whose choices are saved in ~/.config/game-translator.
+provider = "local"
 url = "http://127.0.0.1:8194/v1/chat/completions"
 model = "gemma-4-26b-a4b"
 temperature = 0.1
@@ -40,6 +44,13 @@ Rules:
 - Output: a JSON object with the same ids, each holding the translation of that block only, without ⏎. Write quotation marks as “ ”, never as straight quotes. Join lines that form one sentence; keep a line break (\\n) only between separate items, as in a list or a profile card.
 - Also return "names": every person name found in the blocks, as written in Japanese, mapped to the romaji you used ({} if none). Use the readings of the glossary and of the names already used, when given.
 """
+
+# A remote OpenAI-compatible provider (only the text is sent, never the image).
+# The API key comes from the GAME_TRANSLATOR_API_KEY environment variable, or is
+# saved from the settings page in ~/.config/game-translator/secrets.toml.
+[translate.remote]
+url = "https://openrouter.ai/api/v1"
+model = "google/gemma-4-26b-a4b-it"
 
 # Started by the app when nothing answers on `url` (remove this section to run
 # your own server). Models are `owner/repo:file` on Hugging Face, downloaded once

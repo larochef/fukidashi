@@ -4,7 +4,7 @@ use std::{
 };
 
 use anyhow::Context;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 #[derive(Debug, Deserialize)]
@@ -48,6 +48,16 @@ pub fn cache_dir() -> PathBuf {
     base.join("game-translator")
 }
 
+/// The app's per-machine settings: `$XDG_CONFIG_HOME/game-translator`, by
+/// default `~/.config/game-translator` (choices made in the web page, secrets).
+pub fn config_dir() -> PathBuf {
+    let base = std::env::var_os("XDG_CONFIG_HOME")
+        .map(PathBuf::from)
+        .filter(|p| p.is_absolute())
+        .unwrap_or_else(|| PathBuf::from(expand_home("~/.config")));
+    base.join("game-translator")
+}
+
 fn default_data_dir() -> String {
     "data".into()
 }
@@ -61,7 +71,7 @@ fn default_styles_dir() -> String {
 }
 
 /// Settings shared by both OpenAI-compatible backends.
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Clone, Deserialize)]
 pub struct Backend {
     pub url: String,
     pub model: String,
@@ -70,6 +80,9 @@ pub struct Backend {
     /// Merged as-is into the request body (e.g. `chat_template_kwargs`, `reasoning_effort`).
     #[serde(default)]
     pub extra: serde_json::Map<String, Value>,
+    /// Sent as a bearer token; never read from the config file.
+    #[serde(skip)]
+    pub api_key: Option<String>,
 }
 
 /// PP-OCR models: registered names are downloaded on first use, paths are used as is.
@@ -90,10 +103,15 @@ fn default_box_threshold() -> f32 {
     0.5
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Clone, Deserialize)]
 pub struct TranslateConfig {
+    /// The local model (`url`, served by `server`) or a remote provider.
+    #[serde(default)]
+    pub provider: Provider,
     #[serde(flatten)]
     pub backend: Backend,
+    #[serde(default)]
+    pub remote: RemoteConfig,
     pub history: usize,
     /// `{lang}` is replaced by the target language name.
     pub system_prompt: String,
@@ -101,9 +119,31 @@ pub struct TranslateConfig {
     pub server: Option<ServerConfig>,
 }
 
+#[derive(Debug, Default, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum Provider {
+    #[default]
+    Local,
+    Remote,
+}
+
+/// An OpenAI-compatible provider (OpenRouter, a server on another machine):
+/// only the text of the screen is sent, never the image.
+#[derive(Debug, Default, Clone, Serialize, Deserialize)]
+pub struct RemoteConfig {
+    /// Base URL (`https://openrouter.ai/api/v1`) or the full chat completions URL.
+    #[serde(default)]
+    pub url: String,
+    #[serde(default)]
+    pub model: String,
+    /// Merged as-is into the request body, like `translate.extra`.
+    #[serde(default)]
+    pub extra: serde_json::Map<String, Value>,
+}
+
 /// A `llama-server` the app launches itself. Models are `owner/repo:file`
 /// specs resolved through the Hugging Face cache.
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Clone, Deserialize)]
 pub struct ServerConfig {
     /// Program to run (`~/` allowed) instead of a downloaded build; the
     /// `LLAMA_SERVER` environment variable overrides it.
@@ -132,7 +172,7 @@ pub struct ServerConfig {
 }
 
 /// What to do when a newer llama.cpp build is out.
-#[derive(Debug, Default, Clone, Copy, PartialEq, Deserialize)]
+#[derive(Debug, Default, Clone, Copy, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum Update {
     /// Install it in the background, use it from the next start.

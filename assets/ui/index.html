@@ -1,0 +1,324 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Game Translator</title>
+<style>
+  :root {
+    --bg: #f6f7f9; --panel: #ffffff; --text: #1c2026; --muted: #646b75; --line: #dfe3e8;
+    --accent: #3b5bdb; --accent-text: #ffffff; --ok: #2b8a3e; --warn: #c27c0e; --bad: #c92a2a;
+    --code-bg: #f1f3f5; --input: #ffffff;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #14161a; --panel: #1c1f24; --text: #e7e9ec; --muted: #9aa1ab; --line: #2e333a;
+      --accent: #7b93f0; --accent-text: #0e1116; --ok: #51cf66; --warn: #fcc419; --bad: #ff6b6b;
+      --code-bg: #121417; --input: #16181c;
+    }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text); font: 15px/1.5 system-ui, sans-serif; }
+  header { display: flex; align-items: center; gap: 24px; padding: 14px 24px; border-bottom: 1px solid var(--line); background: var(--panel); flex-wrap: wrap; }
+  header h1 { font-size: 17px; margin: 0; }
+  nav { display: flex; gap: 4px; }
+  nav a { padding: 6px 12px; border-radius: 6px; color: var(--muted); text-decoration: none; }
+  nav a.active { background: var(--code-bg); color: var(--text); font-weight: 600; }
+  nav a.soon { opacity: .5; pointer-events: none; }
+  main { max-width: 920px; margin: 0 auto; padding: 24px 16px 64px; display: grid; gap: 20px; }
+  section { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 20px; }
+  h2 { font-size: 16px; margin: 0 0 4px; }
+  .hint { color: var(--muted); font-size: 13px; margin: 0 0 14px; }
+  .row { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
+  .grid { display: grid; grid-template-columns: 170px 1fr; gap: 10px 16px; align-items: center; }
+  @media (max-width: 600px) { .grid { grid-template-columns: 1fr; } }
+  label { color: var(--muted); font-size: 13px; }
+  input, select, textarea { font: inherit; color: var(--text); background: var(--input); border: 1px solid var(--line); border-radius: 6px; padding: 7px 10px; width: 100%; }
+  textarea { font-family: ui-monospace, monospace; font-size: 13px; min-height: 60px; }
+  button { font: inherit; border: 1px solid var(--line); background: var(--panel); color: var(--text); border-radius: 6px; padding: 7px 14px; cursor: pointer; }
+  button.primary { background: var(--accent); color: var(--accent-text); border-color: var(--accent); font-weight: 600; }
+  button:disabled { opacity: .5; cursor: default; }
+  .segmented { display: inline-flex; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; }
+  .segmented button { border: 0; border-radius: 0; padding: 8px 16px; }
+  .segmented button.on { background: var(--accent); color: var(--accent-text); font-weight: 600; }
+  .pill { display: inline-flex; align-items: center; gap: 8px; padding: 4px 12px; border-radius: 999px; background: var(--code-bg); font-size: 14px; }
+  .dot { width: 9px; height: 9px; border-radius: 50%; background: var(--muted); }
+  .dot.ok { background: var(--ok); } .dot.warn { background: var(--warn); } .dot.bad { background: var(--bad); }
+  .builds { display: grid; grid-template-columns: 110px 1fr; gap: 4px 12px; font-size: 14px; }
+  .builds dt { color: var(--muted); } .builds dd { margin: 0; font-family: ui-monospace, monospace; }
+  pre { background: var(--code-bg); border-radius: 6px; padding: 12px; font-size: 12px; max-height: 320px; overflow: auto; white-space: pre-wrap; word-break: break-all; margin: 0; }
+  .result { margin-top: 12px; padding: 10px 12px; border-radius: 6px; background: var(--code-bg); font-size: 14px; }
+  .result.bad { color: var(--bad); }
+  .message { min-height: 20px; font-size: 14px; }
+  .message.bad { color: var(--bad); } .message.ok { color: var(--ok); }
+  .hidden { display: none !important; }
+  code { font-family: ui-monospace, monospace; font-size: 13px; background: var(--code-bg); padding: 1px 5px; border-radius: 4px; }
+</style>
+</head>
+<body>
+<header>
+  <h1>Game Translator</h1>
+  <nav>
+    <a href="#" class="active">Translation engine</a>
+    <a href="#" class="soon" title="Coming soon">Settings</a>
+    <a href="#" class="soon" title="Coming soon">Games</a>
+  </nav>
+</header>
+<main>
+  <section>
+    <div class="row" style="justify-content: space-between">
+      <div>
+        <h2>Engine</h2>
+        <p class="hint">Where the text of the screen is translated.</p>
+      </div>
+      <span class="pill"><span class="dot" id="status-dot"></span><span id="status-text">…</span></span>
+    </div>
+    <div class="segmented" id="provider">
+      <button data-provider="local">Local model</button>
+      <button data-provider="remote">Remote provider</button>
+    </div>
+  </section>
+
+  <section id="local">
+    <h2>Local model</h2>
+    <p class="hint">A prebuilt llama.cpp fitting your GPU, downloaded once and kept up to date.</p>
+    <p class="hint hidden" id="program-note"></p>
+    <div class="grid">
+      <label>GPU</label><div id="gpu">…</div>
+      <label for="runtime">Build</label>
+      <select id="runtime">
+        <option value="auto">Automatic</option>
+        <option value="strix">Strix Halo (ROCm)</option>
+        <option value="vulkan">Vulkan (any GPU)</option>
+        <option value="cuda">CUDA (NVIDIA)</option>
+        <option value="cuda12">CUDA 12</option>
+        <option value="cuda13">CUDA 13</option>
+        <option value="cpu">CPU only</option>
+      </select>
+      <label for="release">Release</label>
+      <input id="release" placeholder="latest, or a tag such as b11856">
+      <label for="update">Updates</label>
+      <select id="update">
+        <option value="auto">Install automatically (used from the next start)</option>
+        <option value="notify">Only tell me in the log</option>
+        <option value="off">Never check</option>
+      </select>
+      <label>Model</label><div><code id="model">…</code></div>
+      <label>Installed</label>
+      <dl class="builds" id="builds" style="margin:0"></dl>
+    </div>
+    <div class="row" style="margin-top: 16px">
+      <button id="check">Check for updates now</button>
+      <button id="restart">Restart server</button>
+    </div>
+  </section>
+
+  <section id="remote" class="hidden">
+    <h2>Remote provider</h2>
+    <p class="hint">Any OpenAI-compatible endpoint (OpenRouter, a server on another machine). Only the text is sent, never the image.</p>
+    <div class="grid">
+      <label for="url">URL</label>
+      <input id="url" placeholder="https://openrouter.ai/api/v1">
+      <label for="remote-model">Model</label>
+      <input id="remote-model" placeholder="google/gemma-4-26b-a4b-it">
+      <label for="api-key">API key</label>
+      <input id="api-key" type="password" autocomplete="off">
+      <label for="extra">Extra options</label>
+      <textarea id="extra" placeholder='{"provider": {"sort": "latency"}}'></textarea>
+    </div>
+    <div class="row" style="margin-top: 16px">
+      <button id="clear-key">Forget the saved key</button>
+    </div>
+  </section>
+
+  <section>
+    <div class="row">
+      <button class="primary" id="save">Save</button>
+      <button id="test">Test the translation</button>
+      <span class="message" id="message"></span>
+    </div>
+    <div class="result hidden" id="test-result"></div>
+  </section>
+
+  <section>
+    <div class="row" style="justify-content: space-between">
+      <h2>Log</h2>
+      <div class="segmented" id="log-source">
+        <button data-source="app" class="on">App</button>
+        <button data-source="server">llama-server</button>
+      </div>
+    </div>
+    <pre id="log" style="margin-top: 12px"></pre>
+  </section>
+</main>
+<script>
+const $ = (id) => document.getElementById(id);
+let state = null;
+let provider = "local";
+let logSource = "app";
+
+async function api(path, options = {}) {
+  const response = await fetch(path, {
+    headers: { "Content-Type": "application/json" },
+    ...options,
+    body: options.body && JSON.stringify(options.body),
+  });
+  const data = await response.json();
+  if (!response.ok) throw new Error(data.error || response.statusText);
+  return data;
+}
+
+function showProvider(value) {
+  provider = value;
+  for (const button of $("provider").children) button.classList.toggle("on", button.dataset.provider === value);
+  $("local").classList.toggle("hidden", value !== "local");
+  $("remote").classList.toggle("hidden", value !== "remote");
+}
+
+function gpuText(gpus) {
+  const parts = [];
+  if (gpus.amd.length) parts.push("AMD " + gpus.amd.join(", "));
+  if (gpus.nvidia) parts.push("NVIDIA, driver " + gpus.nvidia.join("."));
+  return parts.length ? parts.join(" · ") : "none found";
+}
+
+function showStatus(data) {
+  const s = data.status;
+  let text, level;
+  if (data.provider === "remote") { text = "Remote: " + (data.remote.model || "?"); level = "ok"; }
+  else switch (s.state) {
+    case "ready": text = "Running " + s.detail; level = "ok"; break;
+    case "starting": text = "Starting…"; level = "warn"; break;
+    case "external": text = "Using a server already running"; level = "ok"; break;
+    case "failed": text = "Failed to start"; level = "bad"; break;
+    default: text = "Stopped"; level = "";
+  }
+  $("status-text").textContent = text;
+  $("status-text").title = s.state === "failed" ? s.detail : "";
+  $("status-dot").className = "dot " + level;
+}
+
+function showBuilds(local) {
+  const b = local.builds || {};
+  const rows = [
+    ["Kind", local.variant || "?"],
+    ["Current", b.current || "none yet"],
+    ["Previous", b.previous || "–"],
+  ];
+  if (b.pending) rows.push(["Next start", b.pending]);
+  if (b.failed && b.failed.length) rows.push(["Failed", b.failed.join(", ")]);
+  rows.push(["Last check", b.checked_at ? new Date(b.checked_at * 1000).toLocaleString() : "never"]);
+  $("builds").replaceChildren(...rows.flatMap(([k, v]) => {
+    const dt = document.createElement("dt"); dt.textContent = k;
+    const dd = document.createElement("dd"); dd.textContent = v;
+    return [dt, dd];
+  }));
+}
+
+// Fills the form; `live` only refreshes what changes on its own.
+function show(data, live) {
+  state = data;
+  showStatus(data);
+  showBuilds(data.local);
+  $("gpu").textContent = gpuText(data.local.gpus);
+  $("model").textContent = data.local.model || "–";
+  const note = $("program-note");
+  note.classList.toggle("hidden", !data.local.program);
+  note.textContent = data.local.program ? "Your own llama-server runs instead of a downloaded build: " + data.local.program : "";
+  $("restart").disabled = data.provider !== "local" || !data.local.managed;
+  $("check").disabled = !data.local.managed;
+  const key = data.remote.key;
+  $("api-key").placeholder = key === "env" ? "from $" + data.remote.key_env : key === "file" ? "saved (leave empty to keep it)" : "not set";
+  $("clear-key").disabled = key !== "file";
+  if (live) return;
+  showProvider(data.provider);
+  $("runtime").value = data.local.runtime;
+  $("release").value = data.local.release;
+  $("update").value = data.local.update;
+  $("url").value = data.remote.url;
+  $("remote-model").value = data.remote.model;
+  $("extra").value = Object.keys(data.remote.extra || {}).length ? JSON.stringify(data.remote.extra, null, 2) : "";
+}
+
+function message(text, level = "") {
+  $("message").textContent = text;
+  $("message").className = "message " + level;
+}
+
+function formSettings() {
+  let extra = {};
+  const raw = $("extra").value.trim();
+  if (raw) {
+    try { extra = JSON.parse(raw); } catch { throw new Error("Extra options must be a JSON object"); }
+  }
+  return {
+    provider,
+    local: { runtime: $("runtime").value, release: $("release").value.trim() || "latest", update: $("update").value },
+    remote: { url: $("url").value.trim(), model: $("remote-model").value.trim(), extra },
+  };
+}
+
+async function save(apiKey) {
+  try {
+    const body = formSettings();
+    const key = apiKey ?? $("api-key").value;
+    if (key) body.api_key = key;
+    if (apiKey === "") body.api_key = "";
+    show(await api("/api/engine", { method: "PUT", body }), false);
+    $("api-key").value = "";
+    message("Saved.", "ok");
+  } catch (error) { message(error.message, "bad"); }
+}
+
+async function test() {
+  const result = $("test-result");
+  result.className = "result";
+  result.textContent = "Translating a test line…";
+  try {
+    const settings = formSettings();
+    const body = { provider, remote: settings.remote };
+    if ($("api-key").value) body.api_key = $("api-key").value;
+    const r = await api("/api/engine/test", { method: "POST", body });
+    if (r.ok) result.textContent = `${r.model} · ${(r.ms / 1000).toFixed(1)} s\n${r.source}\n→ ${r.translation}`;
+    else { result.className = "result bad"; result.textContent = `${r.model}: ${r.error}`; }
+  } catch (error) { result.className = "result bad"; result.textContent = error.message; }
+  result.style.whiteSpace = "pre-wrap";
+}
+
+async function refresh() {
+  try { show(await api("/api/engine"), true); } catch { $("status-text").textContent = "App not reachable"; $("status-dot").className = "dot bad"; }
+  try {
+    const log = $("log");
+    const atBottom = log.scrollTop + log.clientHeight >= log.scrollHeight - 20;
+    const text = await (await fetch("/api/logs?lines=300&source=" + logSource)).text();
+    if (log.textContent !== text) {
+      log.textContent = text || "(empty)";
+      if (atBottom) log.scrollTop = log.scrollHeight;
+    }
+  } catch {}
+}
+
+$("provider").addEventListener("click", (e) => { if (e.target.dataset.provider) showProvider(e.target.dataset.provider); });
+$("log-source").addEventListener("click", (e) => {
+  if (!e.target.dataset.source) return;
+  logSource = e.target.dataset.source;
+  for (const b of $("log-source").children) b.classList.toggle("on", b === e.target);
+  $("log").textContent = "";
+  refresh();
+});
+$("save").addEventListener("click", () => save());
+$("test").addEventListener("click", test);
+$("clear-key").addEventListener("click", () => save(""));
+$("restart").addEventListener("click", async () => {
+  try { show(await api("/api/engine/restart", { method: "POST" }), true); message("Restarting…"); } catch (error) { message(error.message, "bad"); }
+});
+$("check").addEventListener("click", async () => {
+  try { await api("/api/engine/check", { method: "POST" }); message("Checking — see the log."); } catch (error) { message(error.message, "bad"); }
+});
+
+api("/api/engine").then((data) => show(data, false)).catch((error) => message(error.message, "bad"));
+setInterval(refresh, 2000);
+refresh();
+</script>
+</body>
+</html>

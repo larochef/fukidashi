@@ -83,8 +83,8 @@ impl Variant {
 }
 
 /// The GPUs of this machine, as far as picking a build goes.
-#[derive(Debug, Default)]
-struct Gpus {
+#[derive(Debug, Default, Serialize)]
+pub struct Gpus {
     /// AMD GPU targets (gfx1151), from the ROCm kernel driver.
     amd: Vec<String>,
     /// NVIDIA driver version (major, minor).
@@ -92,7 +92,7 @@ struct Gpus {
 }
 
 impl Gpus {
-    fn detect() -> Self {
+    pub fn detect() -> Self {
         let amd = std::fs::read_dir("/sys/class/kfd/kfd/topology/nodes")
             .into_iter()
             .flatten()
@@ -143,7 +143,6 @@ pub fn variant(setting: &str) -> anyhow::Result<Variant> {
         "cpu" => Variant::Cpu,
         other => bail!("unknown runtime \"{other}\": expected auto, strix, vulkan, cuda, cuda12, cuda13 or cpu"),
     };
-    info!(?gpus, variant = variant.name(), "llama.cpp build");
     Ok(variant)
 }
 
@@ -211,15 +210,20 @@ pub fn started(variant: &Variant, build: &Build, failed: &[&Build]) {
     }
 }
 
-/// Looks for a newer build (at most once a day) and, in `auto` mode, installs
-/// it in the background for the next start.
-pub async fn check_for_update(client: reqwest::Client, config_update: Update, release: String, variant: Variant) {
-    if config_update == Update::Off || release != "latest" {
+/// The builds of a variant: current, previous, pending, failed.
+pub fn slot(variant: &Variant) -> Slot {
+    State::load().variants.remove(&variant.name()).unwrap_or_default()
+}
+
+/// Looks for a newer build (at most once a day, unless `forced`) and, in
+/// `auto` mode, installs it in the background for the next start.
+pub async fn check_for_update(client: reqwest::Client, config_update: Update, release: String, variant: Variant, forced: bool) {
+    if !forced && (config_update == Update::Off || release != "latest") {
         return;
     }
     let mut state = State::load();
     let slot = state.variants.entry(variant.name()).or_default();
-    if now().saturating_sub(slot.checked_at) < CHECK_INTERVAL.as_secs() {
+    if !forced && now().saturating_sub(slot.checked_at) < CHECK_INTERVAL.as_secs() {
         return;
     }
     let failed = slot.failed.clone();
@@ -231,7 +235,7 @@ pub async fn check_for_update(client: reqwest::Client, config_update: Update, re
             info!(build = current, "llama.cpp is up to date");
             return Ok(None);
         }
-        if config_update == Update::Notify {
+        if config_update == Update::Notify && !forced {
             info!(
                 build = id,
                 "a newer llama.cpp build is available: set update = \"auto\" in [translate.server] to install it"
@@ -278,8 +282,8 @@ struct State {
     variants: BTreeMap<String, Slot>,
 }
 
-#[derive(Default, Serialize, Deserialize)]
-struct Slot {
+#[derive(Debug, Default, Clone, Serialize, Deserialize)]
+pub struct Slot {
     current: Option<String>,
     previous: Option<String>,
     /// Installed in the background, used from the next start.

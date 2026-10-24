@@ -17,6 +17,18 @@ use crate::{
 /// Keeps the server alive as long as it is held; killed on drop.
 pub struct ManagedServer {
     _child: Child,
+    /// The program or build that runs.
+    pub program: String,
+}
+
+/// The output of the server listening on `port`.
+pub fn log_path(port: u16) -> PathBuf {
+    cache_dir().join(format!("llama-server-{port}.log"))
+}
+
+/// The port of the translation endpoint.
+pub fn port(endpoint: &str) -> anyhow::Result<u16> {
+    reqwest::Url::parse(endpoint)?.port_or_known_default().context("no port in translate.url")
 }
 
 /// Makes sure something answers on the translation endpoint. Returns the
@@ -28,7 +40,7 @@ pub async fn ensure(client: &reqwest::Client, endpoint: &str, config: &ServerCon
         return Ok(None);
     }
 
-    let port = reqwest::Url::parse(endpoint)?.port_or_known_default().context("no port in translate.url")?;
+    let port = port(endpoint)?;
 
     // LLAMA_SERVER lets each machine pick its program without touching the config.
     let explicit = std::env::var("LLAMA_SERVER").ok().or_else(|| config.command.as_deref().map(expand_home));
@@ -36,6 +48,7 @@ pub async fn ensure(client: &reqwest::Client, endpoint: &str, config: &ServerCon
         Some(program) => (None, vec![Program::Path(program.into())]),
         None => {
             let variant = runtime::variant(&config.runtime)?;
+            info!(gpus = ?runtime::Gpus::detect(), variant = variant.name(), "llama.cpp build");
             let builds = runtime::builds(client, config, &variant).await?;
             (Some(variant), builds.into_iter().map(Program::Build).collect())
         }
@@ -56,7 +69,7 @@ pub async fn ensure(client: &reqwest::Client, endpoint: &str, config: &ServerCon
             Ok(server) => {
                 if let (Some(variant), Program::Build(build)) = (&variant, program) {
                     runtime::started(variant, build, &failed);
-                    tokio::spawn(runtime::check_for_update(client.clone(), config.update, config.release.clone(), variant.clone()));
+                    tokio::spawn(runtime::check_for_update(client.clone(), config.update, config.release.clone(), variant.clone(), false));
                 }
                 return Ok(Some(server));
             }
@@ -107,7 +120,7 @@ async fn spawn(
     model: &PathBuf,
     draft: Option<&PathBuf>,
 ) -> anyhow::Result<ManagedServer> {
-    let log_path = cache_dir().join("llama-server.log");
+    let log_path = log_path(port);
     std::fs::create_dir_all(cache_dir())?;
     let log = std::fs::File::create(&log_path)?;
 
@@ -142,7 +155,7 @@ async fn spawn(
         }
         if is_up(client, health).await {
             info!("translation server ready");
-            return Ok(ManagedServer { _child: child });
+            return Ok(ManagedServer { _child: child, program });
         }
         tokio::time::sleep(Duration::from_millis(500)).await;
     }
