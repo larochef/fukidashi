@@ -43,10 +43,23 @@ Rules:
 
 # Started by the app when nothing answers on `url` (remove this section to run
 # your own server). Models are `owner/repo:file` on Hugging Face, downloaded once
-# into the Hugging Face cache. Set LLAMA_SERVER to use another llama.cpp build.
+# into the Hugging Face cache.
 [translate.server]
-command = "llama-server"
+# llama.cpp build, downloaded once into ~/.cache/game-translator/runtimes:
+# "auto" picks it from the GPU (strix: ROCm for AMD Strix Halo; cuda: NVIDIA;
+# vulkan: other GPUs; cpu: none). Also "strix", "vulkan", "cuda", "cuda12",
+# "cuda13", "cpu". To run your own build instead, set command = "/path/to/llama-server"
+# or the LLAMA_SERVER environment variable.
+runtime = "auto"
+# "latest", or a release tag to stay on ("b11856"; strix builds count apart: "b1030").
+release = "latest"
+# At start, at most once a day: "auto" installs a newer build in the background
+# for the next start (back to the previous one if it fails to start), "notify"
+# only says so in the log, "off" never looks.
+update = "auto"
 model = "unsloth/gemma-4-26b-a4b-it-GGUF:gemma-4-26B-A4B-it-UD-Q4_K_XL.gguf"
+# Model for one kind of build: FP4 runs natively on recent NVIDIA GPUs.
+models = { cuda = "unsloth/gemma-4-26b-a4b-it-GGUF:gemma-4-26B-A4B-it-MXFP4_MOE.gguf" }
 # Speculative decoding (multi-token prediction); dropped if your llama.cpp rejects it.
 draft = "unsloth/gemma-4-26b-a4b-it-GGUF:MTP/mtp-gemma-4-26B-A4B-it-Q8_0.gguf"
 draft_args = ["--spec-type", "draft-mtp", "-ngld", "999"]

@@ -1,6 +1,7 @@
 //! Starts the translation model server (`llama-server`) when it isn't running:
-//! model files come from the Hugging Face cache (downloaded once, shared with
-//! other tools), and the server is stopped when the app exits.
+//! a prebuilt llama.cpp build fitting the GPU (see `runtime`) unless a program
+//! is given, model files from the Hugging Face cache (downloaded once, shared
+//! with other tools). The server is stopped when the app exits.
 
 use std::{path::PathBuf, process::Stdio, time::Duration};
 
@@ -8,7 +9,10 @@ use anyhow::{Context, bail};
 use tokio::process::{Child, Command};
 use tracing::{info, warn};
 
-use crate::config::{ServerConfig, cache_dir, expand_home};
+use crate::{
+    config::{ServerConfig, cache_dir, expand_home},
+    runtime::{self, Build},
+};
 
 /// Keeps the server alive as long as it is held; killed on drop.
 pub struct ManagedServer {
@@ -24,22 +28,74 @@ pub async fn ensure(client: &reqwest::Client, endpoint: &str, config: &ServerCon
         return Ok(None);
     }
 
-    let model = fetch(&config.model).await?;
+    let port = reqwest::Url::parse(endpoint)?.port_or_known_default().context("no port in translate.url")?;
+
+    // LLAMA_SERVER lets each machine pick its program without touching the config.
+    let explicit = std::env::var("LLAMA_SERVER").ok().or_else(|| config.command.as_deref().map(expand_home));
+    let (variant, builds) = match explicit {
+        Some(program) => (None, vec![Program::Path(program.into())]),
+        None => {
+            let variant = runtime::variant(&config.runtime)?;
+            let builds = runtime::builds(client, config, &variant).await?;
+            (Some(variant), builds.into_iter().map(Program::Build).collect())
+        }
+    };
+
+    let spec = variant.as_ref().and_then(|v| config.models.get(v.family())).unwrap_or(&config.model);
+    let model = fetch(spec).await?;
     let draft = match &config.draft {
         Some(draft) => Some(fetch(draft).await?),
         None => None,
     };
-    let port = reqwest::Url::parse(endpoint)?.port_or_known_default().context("no port in translate.url")?;
 
-    // Speculative decoding needs a recent llama.cpp; fall back to plain decoding
-    // if this build rejects the draft options.
-    if let Some(draft) = &draft {
-        match spawn(client, &health, config, port, &model, Some(draft)).await {
-            Ok(server) => return Ok(Some(server)),
+    // Newest build first; an older one is the fallback when a new one fails.
+    let mut failed: Vec<&Build> = Vec::new();
+    let mut last_error = None;
+    for program in &builds {
+        match start(client, &health, config, port, program, &model, draft.as_ref()).await {
+            Ok(server) => {
+                if let (Some(variant), Program::Build(build)) = (&variant, program) {
+                    runtime::started(variant, build, &failed);
+                    tokio::spawn(runtime::check_for_update(client.clone(), config.update, config.release.clone(), variant.clone()));
+                }
+                return Ok(Some(server));
+            }
+            Err(error) => {
+                warn!("{error:#}");
+                if let Program::Build(build) = program {
+                    failed.push(build);
+                }
+                last_error = Some(error);
+            }
+        }
+    }
+    Err(last_error.unwrap_or_else(|| anyhow::anyhow!("no llama.cpp build to start")))
+}
+
+/// What to run: a program given by the user, or a downloaded build.
+enum Program {
+    Path(PathBuf),
+    Build(Build),
+}
+
+/// Starts the server, with speculative decoding when configured: it needs a
+/// recent llama.cpp, so plain decoding is the fallback if the build rejects it.
+async fn start(
+    client: &reqwest::Client,
+    health: &str,
+    config: &ServerConfig,
+    port: u16,
+    program: &Program,
+    model: &PathBuf,
+    draft: Option<&PathBuf>,
+) -> anyhow::Result<ManagedServer> {
+    if let Some(draft) = draft {
+        match spawn(client, health, config, port, program, model, Some(draft)).await {
+            Ok(server) => return Ok(server),
             Err(error) => warn!("{error:#}; retrying without the draft model"),
         }
     }
-    spawn(client, &health, config, port, &model, None).await.map(Some)
+    spawn(client, health, config, port, program, model, None).await
 }
 
 async fn spawn(
@@ -47,16 +103,26 @@ async fn spawn(
     health: &str,
     config: &ServerConfig,
     port: u16,
+    program: &Program,
     model: &PathBuf,
     draft: Option<&PathBuf>,
 ) -> anyhow::Result<ManagedServer> {
-    // LLAMA_SERVER lets each machine pick its build without touching the config.
-    let program = std::env::var("LLAMA_SERVER").unwrap_or_else(|_| expand_home(&config.command));
     let log_path = cache_dir().join("llama-server.log");
     std::fs::create_dir_all(cache_dir())?;
     let log = std::fs::File::create(&log_path)?;
 
-    let mut command = Command::new(&program);
+    let mut command = match program {
+        Program::Path(path) => Command::new(path),
+        Program::Build(build) => {
+            let mut command = Command::new(&build.program);
+            command.env("LD_LIBRARY_PATH", runtime::library_path(build));
+            command
+        }
+    };
+    let program = match program {
+        Program::Path(path) => path.display().to_string(),
+        Program::Build(build) => build.id.clone(),
+    };
     command.arg("-m").arg(model).args(["--host", "127.0.0.1", "--port", &port.to_string()]).args(&config.args);
     if let Some(draft) = draft {
         command.arg("-md").arg(draft).args(&config.draft_args);
@@ -66,7 +132,7 @@ async fn spawn(
         .stderr(Stdio::from(log))
         .kill_on_drop(true)
         .spawn()
-        .with_context(|| format!("cannot start `{program}`: install llama.cpp or set LLAMA_SERVER"))?;
+        .with_context(|| format!("cannot start `{program}`"))?;
     info!(program, model = %model.display(), draft = draft.is_some(), log = %log_path.display(), "starting translation server");
 
     // Loading a ~20 GB model can take a while on first start.

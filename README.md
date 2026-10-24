@@ -19,15 +19,27 @@ RetroArch core, in fullscreen, without screen capture or overlay windows.
 ## Requirements
 
 - **Rust** (stable): <https://rustup.rs>
-- **llama.cpp**: `llama-server` on your `PATH`, or set `LLAMA_SERVER` to its path.
-  Any recent build with GPU support works (Vulkan, ROCm, CUDA, Metal).
+- **Linux x86-64** with a GPU driver: Mesa (AMD, Intel) or the NVIDIA driver (570 or
+  newer for CUDA). Other systems: bring your own `llama-server` (see Configuration).
 - **RetroArch** (a recent version, with the AI Service and the Vulkan or GL video driver).
 - **Memory**: the default translation model (Gemma 4 26B-A4B, 4-bit) needs about
   20 GB of GPU or unified memory, on top of the game. OCR runs on the CPU.
 
-Everything else is downloaded on first start: the OCR models (~90 MB, into
-`~/.cache/game-translator`) and the translation model (~18 GB, into the Hugging
-Face cache, `~/.cache/huggingface`, shared with other tools).
+Everything else is downloaded on first start: the OCR models (~90 MB) and a
+prebuilt llama.cpp fitting the GPU (into `~/.cache/game-translator`), and the
+translation model (~16 GB, into the Hugging Face cache, `~/.cache/huggingface`,
+shared with other tools).
+
+| GPU | llama.cpp build (`runtime = "auto"`) |
+|---|---|
+| AMD Strix Halo (gfx1151) | ROCm, from [strix-llama.cpp](https://github.com/halo-box/strix-llama.cpp) (~550 MB, ROCm libraries included) |
+| NVIDIA, driver 570+ | CUDA 12 or 13, from [llama.cpp](https://github.com/ggml-org/llama.cpp) (~600 MB with the CUDA libraries); FP4 model |
+| Other AMD or Intel, older NVIDIA driver | Vulkan, from llama.cpp (~35 MB) |
+| None | CPU, from llama.cpp |
+
+The build is kept up to date: at start (at most once a day) a newer release is
+installed in the background and used from the next start, the previous one
+staying as a fallback if the new one fails to start.
 
 ## Quick start
 
@@ -61,7 +73,10 @@ driver must be `gl`, `glcore` or `vulkan` for the transparent overlay.
 
 - **Another model or server**: edit `[translate]` (any OpenAI-compatible
   endpoint works). Remove `[translate.server]` if you run the server yourself.
-- **Another llama.cpp build** (e.g. one tuned for your GPU): `LLAMA_SERVER=/path/to/llama-server cargo run --release`.
+- **llama.cpp build**: `[translate.server]` sets the kind of build (`runtime`),
+  pins a release (`release = "b11856"`) or turns updates off or to a log line
+  (`update`). To run your own build: `command = "/path/to/llama-server"`, or
+  `LLAMA_SERVER=/path/to/llama-server cargo run --release`.
 
 ### Game profiles and styles
 

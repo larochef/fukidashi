@@ -105,10 +105,23 @@ pub struct TranslateConfig {
 /// specs resolved through the Hugging Face cache.
 #[derive(Debug, Deserialize)]
 pub struct ServerConfig {
-    /// Program to run (`~/` allowed); the `LLAMA_SERVER` environment variable overrides it.
-    #[serde(default = "default_server_command")]
-    pub command: String,
+    /// Program to run (`~/` allowed) instead of a downloaded build; the
+    /// `LLAMA_SERVER` environment variable overrides it.
+    pub command: Option<String>,
+    /// Prebuilt build to download: "auto" (from the GPU), "strix", "vulkan",
+    /// "cuda", "cuda12", "cuda13" or "cpu".
+    #[serde(default = "default_runtime")]
+    pub runtime: String,
+    /// "latest", or a release tag to stay on ("b11856").
+    #[serde(default = "default_release")]
+    pub release: String,
+    #[serde(default)]
+    pub update: Update,
     pub model: String,
+    /// Model for one kind of build ("cuda", "vulkan", "strix", "cpu"), when
+    /// another quantization suits it better.
+    #[serde(default)]
+    pub models: BTreeMap<String, String>,
     /// Optional draft model for speculative decoding (dropped if the server rejects it).
     pub draft: Option<String>,
     #[serde(default)]
@@ -118,8 +131,24 @@ pub struct ServerConfig {
     pub draft_args: Vec<String>,
 }
 
-fn default_server_command() -> String {
-    "llama-server".into()
+/// What to do when a newer llama.cpp build is out.
+#[derive(Debug, Default, Clone, Copy, PartialEq, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum Update {
+    /// Install it in the background, use it from the next start.
+    #[default]
+    Auto,
+    /// Only say so in the log.
+    Notify,
+    Off,
+}
+
+fn default_runtime() -> String {
+    "auto".into()
+}
+
+fn default_release() -> String {
+    "latest".into()
 }
 
 #[derive(Debug, Deserialize)]

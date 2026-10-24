@@ -10,6 +10,7 @@ mod llm;
 mod memory;
 mod ocr;
 mod render;
+mod runtime;
 mod server;
 mod translate;
 
