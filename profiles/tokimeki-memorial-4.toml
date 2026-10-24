@@ -9,8 +9,3 @@ styles = ["dating-sim"]
 instructions = """
 Game: Tokimeki Memorial 4 (PSP, 2009).
 """
-
-[glossary]
-"大倉都子" = "Ōkura Miyako"
-"都子" = "Miyako"
-"小林学" = "Kobayashi Manabu"

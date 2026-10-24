@@ -53,18 +53,57 @@
   .message.bad { color: var(--bad); } .message.ok { color: var(--ok); }
   .hidden { display: none !important; }
   code { font-family: ui-monospace, monospace; font-size: 13px; background: var(--code-bg); padding: 1px 5px; border-radius: 4px; }
+  .page { display: grid; gap: 20px; }
+  .field-help { grid-column: 2; color: var(--muted); font-size: 12px; margin-top: -6px; }
+  @media (max-width: 600px) { .field-help { grid-column: 1; } }
+  .color { display: flex; gap: 10px; align-items: center; }
+  .color input[type=color] { width: 48px; height: 34px; padding: 2px; }
+  .color input[type=range] { flex: 1; }
+  .color span { font-family: ui-monospace, monospace; font-size: 13px; color: var(--muted); min-width: 64px; }
+  input[type=checkbox] { width: auto; justify-self: start; }
+  textarea.prompt { min-height: 260px; }
+  textarea.raw { min-height: 480px; }
+  .changed { border-color: var(--accent); }
+  .bar { position: sticky; bottom: 0; background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 14px 20px; display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
+  details summary { cursor: pointer; font-weight: 600; }
+  main.wide { max-width: 1280px; }
+  .games { display: grid; grid-template-columns: 280px 1fr; gap: 20px; align-items: start; }
+  @media (max-width: 800px) { .games { grid-template-columns: 1fr; } }
+  .game-list { display: grid; gap: 8px; }
+  .game { text-align: left; padding: 10px 12px; border-radius: 8px; display: grid; gap: 2px; width: 100%; }
+  .game.on { border-color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent); }
+  .game b { font-size: 14px; }
+  .game small { color: var(--muted); font-size: 12px; }
+  .tabs { display: flex; gap: 4px; border-bottom: 1px solid var(--line); margin: 12px 0 16px; }
+  .tabs button { border: 0; border-bottom: 2px solid transparent; border-radius: 0; background: none; color: var(--muted); padding: 8px 12px; }
+  .tabs button.on { color: var(--text); border-bottom-color: var(--accent); font-weight: 600; }
+  .entries { display: grid; gap: 0; }
+  .entry { display: grid; grid-template-columns: 24px 1fr 1fr auto; gap: 12px; padding: 10px 0; border-top: 1px solid var(--line); align-items: start; font-size: 14px; }
+  @media (max-width: 700px) { .entry { grid-template-columns: 24px 1fr; } .entry > :nth-child(n+3) { grid-column: 2; } }
+  .entry .ja { white-space: pre-wrap; }
+  .entry .tr { white-space: pre-wrap; }
+  .entry .lang { color: var(--muted); font-size: 11px; text-transform: uppercase; margin-right: 6px; }
+  .entry .actions { display: flex; gap: 6px; }
+  .entry .actions button { padding: 3px 9px; font-size: 13px; }
+  .pairs { display: grid; grid-template-columns: 1fr 1fr 34px; gap: 6px 8px; align-items: center; }
+  .pairs .head { color: var(--muted); font-size: 12px; }
+  .pairs button { padding: 4px 0; }
+  .checks { display: flex; gap: 14px; flex-wrap: wrap; }
+  .checks label { display: flex; gap: 6px; align-items: center; color: var(--text); font-size: 14px; }
+  .empty { color: var(--muted); padding: 24px 0; text-align: center; }
 </style>
 </head>
 <body>
 <header>
   <h1>Game Translator</h1>
   <nav>
-    <a href="#" class="active">Translation engine</a>
-    <a href="#" class="soon" title="Coming soon">Settings</a>
-    <a href="#" class="soon" title="Coming soon">Games</a>
+    <a href="#engine" data-page="engine">Translation engine</a>
+    <a href="#settings" data-page="settings">Settings</a>
+    <a href="#games" data-page="games">Games</a>
   </nav>
 </header>
 <main>
+<div class="page" id="page-engine">
   <section>
     <div class="row" style="justify-content: space-between">
       <div>
@@ -150,6 +189,58 @@
     </div>
     <pre id="log" style="margin-top: 12px"></pre>
   </section>
+</div>
+
+<div class="page hidden" id="page-settings">
+  <section>
+    <h2>General</h2>
+    <p class="hint">Saved to <code id="config-path">config.toml</code>, keeping its comments, and applied at once.</p>
+    <div class="grid" data-group="general"></div>
+  </section>
+  <section>
+    <h2>Text detection</h2>
+    <p class="hint">PP-OCR, on the CPU.</p>
+    <div class="grid" data-group="ocr"></div>
+  </section>
+  <section>
+    <h2>Translation</h2>
+    <p class="hint">Applies to the local model and to a remote provider alike. Past translations are reused from each game's memory: a new prompt only affects new text.</p>
+    <div class="grid" data-group="translate"></div>
+  </section>
+  <section>
+    <h2>Overlay</h2>
+    <p class="hint">How translations are drawn over the game.</p>
+    <div class="grid" data-group="render"></div>
+  </section>
+  <section>
+    <details id="advanced">
+      <summary>Edit config.toml</summary>
+      <p class="hint" style="margin-top: 10px">Everything, including what has no field above (server arguments, OCR models). Checked before it is saved.</p>
+      <textarea class="raw" id="raw" spellcheck="false"></textarea>
+      <div class="row" style="margin-top: 12px">
+        <button id="save-raw">Save the file</button>
+        <button id="reload-config">Reload from disk</button>
+      </div>
+    </details>
+  </section>
+  <div class="bar">
+    <button class="primary" id="save-settings">Save</button>
+    <button id="revert-settings">Undo changes</button>
+    <span class="message" id="settings-message"></span>
+  </div>
+</div>
+
+<div class="page hidden" id="page-games">
+  <div class="games">
+    <section style="padding: 14px">
+      <h2 style="margin-bottom: 10px">Games</h2>
+      <div class="game-list" id="game-list"></div>
+    </section>
+    <section id="game">
+      <div class="empty">Pick a game.</div>
+    </section>
+  </div>
+</div>
 </main>
 <script>
 const $ = (id) => document.getElementById(id);
@@ -187,7 +278,10 @@ function showStatus(data) {
   let text, level;
   if (data.provider === "remote") { text = "Remote: " + (data.remote.model || "?"); level = "ok"; }
   else switch (s.state) {
-    case "ready": text = "Running " + s.detail; level = "ok"; break;
+    case "ready":
+      text = "Running " + s.detail + (data.restart_needed ? " · restart to apply the new settings" : "");
+      level = data.restart_needed ? "warn" : "ok";
+      break;
     case "starting": text = "Starting…"; level = "warn"; break;
     case "external": text = "Using a server already running"; level = "ok"; break;
     case "failed": text = "Failed to start"; level = "bad"; break;
@@ -226,6 +320,7 @@ function show(data, live) {
   note.classList.toggle("hidden", !data.local.program);
   note.textContent = data.local.program ? "Your own llama-server runs instead of a downloaded build: " + data.local.program : "";
   $("restart").disabled = data.provider !== "local" || !data.local.managed;
+  $("restart").classList.toggle("primary", !!data.restart_needed);
   $("check").disabled = !data.local.managed;
   const key = data.remote.key;
   $("api-key").placeholder = key === "env" ? "from $" + data.remote.key_env : key === "file" ? "saved (leave empty to keep it)" : "not set";
@@ -317,8 +412,448 @@ $("check").addEventListener("click", async () => {
 });
 
 api("/api/engine").then((data) => show(data, false)).catch((error) => message(error.message, "bad"));
-setInterval(refresh, 2000);
+setInterval(() => { if (page === "engine") refresh(); }, 2000);
 refresh();
+
+// ---- Pages
+
+let page = "engine";
+function showPage() {
+  const hash = location.hash.slice(1);
+  page = hash.startsWith("games") ? "games" : hash === "settings" ? "settings" : "engine";
+  for (const a of document.querySelectorAll("nav a[data-page]")) a.classList.toggle("active", a.dataset.page === page);
+  for (const name of ["engine", "settings", "games"]) $("page-" + name).classList.toggle("hidden", page !== name);
+  document.querySelector("main").classList.toggle("wide", page === "games");
+  if (page === "settings") loadSettings();
+  if (page === "games") {
+    const [, id, tab] = hash.split("/");
+    if (["translations", "names", "profile"].includes(tab)) gameTab = tab;
+    loadGames(decodeURIComponent(id || ""));
+  }
+}
+window.addEventListener("hashchange", showPage);
+
+// ---- Settings
+
+const LANGUAGES = [["en", "English"], ["fr", "French"], ["de", "German"], ["es", "Spanish"], ["it", "Italian"], ["pt", "Portuguese"],
+  ["nl", "Dutch"], ["ru", "Russian"], ["pl", "Polish"], ["ko", "Korean"], ["zh-CN", "Simplified Chinese"], ["zh-TW", "Traditional Chinese"]];
+
+// key, label, type, help, options
+const FIELDS = [
+  ["general", "default_target_lang", "Target language", "select", "Used when RetroArch does not send one (set it in RetroArch's AI Service settings).", LANGUAGES],
+  ["general", "capture_dir", "Save captures to", "optional", "Frames received from RetroArch, kept for testing. Empty: not saved."],
+  ["general", "listen", "Listen on", "text", "Address of this app, as set in RetroArch. Applies after a restart."],
+  ["ocr", "ocr.width", "Width", "int", "Frames are resized to this width before OCR: small pixel fonts read better upscaled."],
+  ["ocr", "ocr.box_threshold", "Box threshold", "float", "Lower finds faint or stylized labels, at the cost of a few stray fragments (0.5).", 0.05],
+  ["ocr", "ocr.min_confidence", "Minimum confidence", "float", "Lines read with less confidence are dropped (0.6).", 0.05],
+  ["translate", "translate.system_prompt", "Instructions", "prompt", "{lang} becomes the target language. Game profiles add their own instructions."],
+  ["translate", "translate.temperature", "Temperature", "float", "Lower is more literal and consistent (0.1).", 0.05],
+  ["translate", "translate.max_tokens", "Max tokens", "int", "Longest answer for one screen."],
+  ["translate", "translate.history", "Context", "int", "Past exchanges sent along, for consistent names and tone."],
+  ["translate", "translate.server.model", "Local model", "text", "Hugging Face file (owner/repo:file.gguf), downloaded once. Applies when the local server restarts."],
+  ["translate", "translate.server.draft", "Draft model", "optional", "Speculative decoding, for speed. Empty: none. Applies when the local server restarts."],
+  ["render", "render.screen_aspect", "Screen", "select", "RetroArch 1.22 and older stretch the overlay over the whole screen, black bars included: auto reads your screen's shape. Newer versions: game.",
+    [["auto", "Auto (from the screen)"], ["game", "The game only"], ["16:9", "16:9"], ["16:10", "16:10"], ["4:3", "4:3"], ["21:9", "21:9"]]],
+  ["render", "render.width", "Overlay width", "int", "In pixels; RetroArch scales it to the screen."],
+  ["render", "render.sample_background", "Game's colours", "bool", "Draw over a plain text box in its own colour, with black or white text."],
+  ["render", "render.background", "Background", "color", "Where the game's box is not plain (a picture, a gradient)."],
+  ["render", "render.text_color", "Text", "color", "With that background."],
+  ["render", "render.outline", "Outline", "float", "Around the letters, as a fraction of the font size (0: none).", 0.01],
+  ["render", "render.font", "Font file", "optional", "A .ttf or .otf (~/ allowed). Empty: the bundled Noto Sans."],
+];
+
+let config = null;
+const hex = (n) => n.toString(16).padStart(2, "0");
+const getKey = (values, key) => key.split(".").reduce((v, part) => (v == null ? undefined : v[part]), values);
+
+function fieldInput([group, key, label, type, help, extra]) {
+  let input;
+  if (type === "select") {
+    input = document.createElement("select");
+    for (const [value, text] of extra) input.add(new Option(text, value));
+  } else if (type === "prompt") {
+    input = document.createElement("textarea");
+    input.className = "prompt";
+    input.spellcheck = false;
+  } else if (type === "bool") {
+    input = document.createElement("input");
+    input.type = "checkbox";
+  } else if (type === "color") {
+    input = document.createElement("div");
+    input.className = "color";
+    input.innerHTML = '<input type="color"><input type="range" min="0" max="255" title="Opacity"><span></span>';
+    input.addEventListener("input", () => {
+      const [, alpha, text] = input.children;
+      text.textContent = "opacity " + Math.round(alpha.value / 2.55) + " %";
+    });
+  } else {
+    input = document.createElement("input");
+    if (type === "int" || type === "float") { input.type = "number"; input.step = type === "int" ? "1" : extra; }
+  }
+  input.id = "f-" + key;
+  input.dataset.key = key;
+  input.dataset.type = type;
+  return input;
+}
+
+function buildSettings() {
+  if (document.querySelector("[data-key]")) return;
+  for (const field of FIELDS) {
+    const [group, key, labelText, , help] = field;
+    const container = document.querySelector(`[data-group="${group}"]`);
+    const label = document.createElement("label");
+    label.textContent = labelText;
+    label.htmlFor = "f-" + key;
+    const input = fieldInput(field);
+    container.append(label, input);
+    if (help) {
+      const p = document.createElement("div");
+      p.className = "field-help";
+      p.textContent = help;
+      container.append(p);
+    }
+    input.addEventListener("input", markChanged);
+    input.addEventListener("change", markChanged);
+  }
+}
+
+function readField(input) {
+  switch (input.dataset.type) {
+    case "bool": return input.checked;
+    case "int": return input.value === "" ? null : parseInt(input.value, 10);
+    case "float": return input.value === "" ? null : parseFloat(input.value);
+    case "optional": return input.value.trim() === "" ? null : input.value.trim();
+    case "color": {
+      const [color, alpha] = input.children;
+      const c = color.value;
+      return [parseInt(c.slice(1, 3), 16), parseInt(c.slice(3, 5), 16), parseInt(c.slice(5, 7), 16), parseInt(alpha.value, 10)];
+    }
+    default: return input.value;
+  }
+}
+
+function writeField(input, value) {
+  switch (input.dataset.type) {
+    case "bool": input.checked = value ?? true; break;
+    case "color": {
+      const [r, g, b, a] = value || [0, 0, 0, 255];
+      const [color, alpha] = input.children;
+      color.value = "#" + hex(r) + hex(g) + hex(b);
+      alpha.value = a;
+      input.dispatchEvent(new Event("input"));
+      break;
+    }
+    case "select":
+      if (value != null && ![...input.options].some((o) => o.value === String(value))) input.add(new Option(String(value), String(value)));
+      input.value = value ?? input.options[0].value;
+      break;
+    default: input.value = value ?? "";
+  }
+}
+
+const same = (a, b) => JSON.stringify(a ?? null) === JSON.stringify(b ?? null);
+
+function changedFields() {
+  return [...document.querySelectorAll("[data-key]")].filter((input) => !same(readField(input), input._initial));
+}
+
+function markChanged() {
+  for (const input of document.querySelectorAll("[data-key]")) input.classList.toggle("changed", !same(readField(input), input._initial));
+}
+
+function fillSettings(data) {
+  config = data;
+  buildSettings();
+  $("config-path").textContent = data.path;
+  for (const input of document.querySelectorAll("[data-key]")) {
+    writeField(input, getKey(data.values, input.dataset.key));
+    input._initial = readField(input);
+  }
+  $("raw").value = data.text;
+  markChanged();
+}
+
+function settingsMessage(text, level = "") {
+  $("settings-message").textContent = text;
+  $("settings-message").className = "message " + level;
+}
+
+function reportReload(data) {
+  const r = data.reloaded || {};
+  const notes = ["Saved and applied."];
+  if (r.restart_app && r.restart_app.length) notes.push("Restart the app for: " + r.restart_app.join(", ") + ".");
+  if (r.restart_server) notes.push("Restart the local server (Translation engine page) to use the new model settings.");
+  settingsMessage(notes.join(" "), "ok");
+}
+
+async function loadSettings() {
+  try { fillSettings(await api("/api/config")); settingsMessage(""); } catch (error) { settingsMessage(error.message, "bad"); }
+}
+
+async function configCall(path, method, body) {
+  settingsMessage("Applying…");
+  try {
+    const data = await api(path, { method, body });
+    fillSettings(data);
+    reportReload(data);
+  } catch (error) { settingsMessage(error.message, "bad"); }
+}
+
+$("save-settings").addEventListener("click", () => {
+  const edits = changedFields().map((input) => ({ key: input.dataset.key, value: readField(input) }));
+  if (!edits.length) return settingsMessage("Nothing changed.");
+  configCall("/api/config", "PUT", { edits });
+});
+$("revert-settings").addEventListener("click", () => { if (config) fillSettings(config); settingsMessage(""); });
+$("save-raw").addEventListener("click", () => configCall("/api/config/raw", "PUT", { text: $("raw").value }));
+$("reload-config").addEventListener("click", () => configCall("/api/config/reload", "POST"));
+
+// ---- Games
+
+const el = (tag, props = {}, ...children) => {
+  const node = Object.assign(document.createElement(tag), props);
+  node.append(...children.filter((c) => c != null));
+  return node;
+};
+let games = [];
+let game = null;
+let gameTab = "translations";
+
+async function loadGames(id) {
+  try {
+    const data = await api("/api/games");
+    games = data.games;
+    showGameList(id);
+    if (!games.length) {
+      $("game").replaceChildren(el("div", { className: "empty", textContent: data.memory ? "No game yet: translate a screen first." : "Game memory is off (data_dir is empty)." }));
+      return;
+    }
+    if (id && games.some((g) => g.id === id)) {
+      if (!game || game.id !== id) await openGame(id);
+      else showGame();
+    } else if (!id) {
+      $("game").replaceChildren(el("div", { className: "empty", textContent: "Pick a game." }));
+      game = null;
+    }
+  } catch (error) { $("game").replaceChildren(el("div", { className: "empty", textContent: error.message })); }
+}
+
+function showGameList(current) {
+  $("game-list").replaceChildren(...games.map((g) => {
+    const counts = Object.entries(g.langs).map(([l, n]) => `${n} ${l}`).join(" · ") || "no translation yet";
+    const button = el("button", { className: "game" + (g.id === current ? " on" : "") },
+      el("b", { textContent: g.name }),
+      el("small", { textContent: [[g.system, g.region].filter(Boolean).join(" · "), counts].filter(Boolean).join(" — ") }),
+      el("small", { textContent: (g.profile ? "profile " + g.profile : "no profile") + (g.names ? ` · ${g.names} names` : "") }));
+    button.addEventListener("click", () => { location.hash = "games/" + encodeURIComponent(g.id); });
+    return button;
+  }));
+}
+
+async function openGame(id) {
+  game = await api("/api/games/" + encodeURIComponent(id));
+  game.query = { lang: "", q: "", offset: 0 };
+  if (!game.memory && gameTab !== "profile") gameTab = "profile";
+  showGame();
+}
+
+function showGame() {
+  const tabs = [["translations", "Translations"], ["names", "Names"], ["profile", "Profile"]].filter(([t]) => game.memory || t === "profile");
+  const tabBar = el("div", { className: "tabs" }, ...tabs.map(([t, label]) => {
+    const b = el("button", { className: t === gameTab ? "on" : "", textContent: label });
+    b.addEventListener("click", () => { location.hash = `games/${encodeURIComponent(game.id)}/${t}`; });
+    return b;
+  }));
+  const body = el("div");
+  $("game").replaceChildren(
+    el("h2", { textContent: game.name }),
+    el("p", { className: "hint", textContent: [game.system, game.region].filter(Boolean).join(" · ") || "Not played yet" }),
+    tabBar, body);
+  if (gameTab === "translations") showTranslations(body);
+  else if (gameTab === "names") showNames(body);
+  else showProfile(body);
+}
+
+function gameMessage(container, text, level = "") {
+  let m = container.querySelector(".message");
+  if (!m) { m = el("span", { className: "message" }); container.append(m); }
+  m.textContent = text;
+  m.className = "message " + level;
+}
+
+// Translations
+
+async function showTranslations(body) {
+  const listed = games.find((g) => g.id === game.id) || { langs: {} };
+  const lang = el("select", {}, new Option("All languages", ""), ...Object.keys(listed.langs).map((l) => new Option(l, l)));
+  lang.value = game.query.lang;
+  const search = el("input", { placeholder: "Search the Japanese or the translation", value: game.query.q });
+  const remove = el("button", { textContent: "Delete selected", disabled: true });
+  const bar = el("div", { className: "row" }, el("div", { style: "flex: 0 0 160px" }, lang), el("div", { style: "flex: 1 1 240px" }, search), remove);
+  const hint = el("p", { className: "hint", style: "margin-top: 10px", textContent: "A deleted translation is translated again the next time its text shows; a corrected one is used as is." });
+  const list = el("div", { className: "entries" });
+  const more = el("button", { textContent: "Show more", style: "margin-top: 12px" });
+  const status = el("div", { className: "row", style: "margin-top: 8px" });
+  body.append(bar, hint, status, list, more);
+
+  const selected = new Map();
+  const updateRemove = () => { remove.disabled = !selected.size; remove.textContent = selected.size ? `Delete selected (${selected.size})` : "Delete selected"; };
+
+  async function load(append) {
+    if (!append) game.query.offset = 0;
+    const params = new URLSearchParams({ lang: game.query.lang, q: game.query.q, offset: game.query.offset, limit: 50 });
+    const data = await api(`/api/games/${encodeURIComponent(game.id)}/memory?${params}`);
+    if (!append) { list.replaceChildren(); selected.clear(); updateRemove(); }
+    gameMessage(status, `${data.total} translation${data.total === 1 ? "" : "s"}`);
+    for (const entry of data.entries) list.append(entryRow(entry));
+    game.query.offset = data.offset + data.entries.length;
+    more.classList.toggle("hidden", game.query.offset >= data.total);
+    if (!data.total) list.append(el("div", { className: "empty", textContent: "Nothing found." }));
+  }
+
+  function entryRow(entry) {
+    const check = el("input", { type: "checkbox" });
+    check.addEventListener("change", () => { check.checked ? selected.set(entry.lang + "\u0000" + entry.ja, entry) : selected.delete(entry.lang + "\u0000" + entry.ja); updateRemove(); });
+    const ja = el("div", { className: "ja" }, el("span", { className: "lang", textContent: entry.lang }), entry.ja.replaceAll("⏎", "\n"));
+    const tr = el("div", { className: "tr", textContent: entry.tr });
+    const edit = el("button", { textContent: "Edit" });
+    const del = el("button", { textContent: "Delete" });
+    const row = el("div", { className: "entry" }, check, ja, tr, el("div", { className: "actions" }, edit, del));
+    edit.addEventListener("click", () => {
+      const area = el("textarea", { value: entry.tr });
+      const save = el("button", { className: "primary", textContent: "Save" });
+      const cancel = el("button", { textContent: "Cancel" });
+      tr.replaceChildren(area, el("div", { className: "row", style: "margin-top: 6px" }, save, cancel));
+      tr.style.whiteSpace = "normal";
+      area.focus();
+      cancel.addEventListener("click", () => { tr.textContent = entry.tr; tr.style.whiteSpace = ""; });
+      save.addEventListener("click", async () => {
+        try {
+          await api(`/api/games/${encodeURIComponent(game.id)}/memory`, { method: "PUT", body: { ...entry, tr: area.value } });
+          entry.tr = area.value.trim();
+          tr.textContent = entry.tr;
+          tr.style.whiteSpace = "";
+        } catch (error) { gameMessage(status, error.message, "bad"); }
+      });
+    });
+    del.addEventListener("click", async () => {
+      try {
+        await api(`/api/games/${encodeURIComponent(game.id)}/memory/delete`, { method: "POST", body: { entries: [{ lang: entry.lang, ja: entry.ja }] } });
+        row.remove();
+        gameMessage(status, "Deleted: it will be translated again.", "ok");
+      } catch (error) { gameMessage(status, error.message, "bad"); }
+    });
+    return row;
+  }
+
+  remove.addEventListener("click", async () => {
+    if (!confirm(`Delete ${selected.size} translation(s)? They will be translated again.`)) return;
+    try {
+      const entries = [...selected.values()].map(({ lang, ja }) => ({ lang, ja }));
+      const r = await api(`/api/games/${encodeURIComponent(game.id)}/memory/delete`, { method: "POST", body: { entries } });
+      await load(false);
+      gameMessage(status, `${r.removed} deleted: they will be translated again.`, "ok");
+    } catch (error) { gameMessage(status, error.message, "bad"); }
+  });
+  lang.addEventListener("change", () => { game.query.lang = lang.value; load(false); });
+  let timer;
+  search.addEventListener("input", () => { clearTimeout(timer); timer = setTimeout(() => { game.query.q = search.value; load(false); }, 250); });
+  more.addEventListener("click", () => load(true));
+  try { await load(false); } catch (error) { gameMessage(status, error.message, "bad"); }
+}
+
+// Key/value tables (names, glossary, OCR fixes)
+
+function pairsEditor(pairs, left, right) {
+  const box = el("div", { className: "pairs" });
+  const addRow = (k = "", v = "") => {
+    const a = el("input", { value: k, placeholder: left });
+    const b = el("input", { value: v, placeholder: right });
+    const x = el("button", { textContent: "×", title: "Remove" });
+    x.addEventListener("click", () => { a.remove(); b.remove(); x.remove(); });
+    box.append(a, b, x);
+  };
+  box.append(el("div", { className: "head", textContent: left }), el("div", { className: "head", textContent: right }), el("div"));
+  for (const [k, v] of Object.entries(pairs || {})) addRow(k, v);
+  const add = el("button", { textContent: "Add", style: "margin-top: 8px" });
+  add.addEventListener("click", () => { addRow(); box.querySelectorAll("input")[box.querySelectorAll("input").length - 2].focus(); });
+  const read = () => {
+    const inputs = [...box.querySelectorAll("input")];
+    const out = {};
+    for (let i = 0; i < inputs.length; i += 2) if (inputs[i].value.trim() && inputs[i + 1].value.trim()) out[inputs[i].value.trim()] = inputs[i + 1].value.trim();
+    return out;
+  };
+  return { node: el("div", {}, box, add), read };
+}
+
+function showNames(body) {
+  const editor = pairsEditor(game.names, "Japanese", "Romaji");
+  const save = el("button", { className: "primary", textContent: "Save" });
+  const row = el("div", { className: "row", style: "margin-top: 16px" }, save);
+  body.append(el("p", { className: "hint", textContent: "Names the translator learned from this game, reused for consistent readings. Fix a wrong reading here; the profile's glossary takes precedence." }), editor.node, row);
+  save.addEventListener("click", async () => {
+    try {
+      const r = await api(`/api/games/${encodeURIComponent(game.id)}/names`, { method: "PUT", body: { names: editor.read() } });
+      game.names = r.names;
+      gameMessage(row, "Saved.", "ok");
+    } catch (error) { gameMessage(row, error.message, "bad"); }
+  });
+}
+
+function suggestMatch() {
+  // The title, region and release tags aside: spaces and punctuation do not matter.
+  return game.name;
+}
+
+function showProfile(body) {
+  const p = game.profile;
+  if (!p && !body.dataset.create) {
+    const create = el("button", { className: "primary", textContent: "Create a profile" });
+    create.addEventListener("click", () => { body.dataset.create = "1"; body.replaceChildren(); showProfile(body); });
+    body.append(el("p", { className: "hint", textContent: "A profile gives the translator what it cannot guess: the game's setting, the reading of names, how to translate its menus, and fixes for words the OCR misreads in its font." }), create);
+    return;
+  }
+  const profile = p || { match: suggestMatch(), styles: [], instructions: "", glossary: {}, ocr: {} };
+  const match = el("input", { value: profile.match || "" });
+  const styles = el("div", { className: "checks" }, ...game.styles.map((name) => el("label", {}, el("input", { type: "checkbox", value: name, checked: (profile.styles || []).includes(name) }), name)));
+  const instructions = el("textarea", { className: "prompt", value: (profile.instructions || "").trim(), placeholder: "Game: …, set in …\nOn the map, the labels are places: …" });
+  const glossary = pairsEditor(profile.glossary, "Japanese", "Translation");
+  const ocr = pairsEditor(profile.ocr, "Read as", "Should be");
+  const save = el("button", { className: "primary", textContent: p ? "Save" : "Create" });
+  const row = el("div", { className: "row", style: "margin-top: 16px" }, save);
+  const grid = el("div", { className: "grid" },
+    el("label", { textContent: "Match" }), match,
+    el("div", { className: "field-help", textContent: "Part of the game's name as RetroArch gives it: the profile applies when it is found there." }),
+    el("label", { textContent: "Styles" }), styles.childElementCount ? styles : el("div", { className: "hint", textContent: "No style in styles/." }),
+    el("div", { className: "field-help", textContent: "Genre instructions and glossary shared by several games." }),
+    el("label", { textContent: "Instructions" }), instructions,
+    el("div", { className: "field-help", textContent: "Added to the translator's instructions for this game." }),
+    el("label", { textContent: "Glossary" }), glossary.node,
+    el("div", { className: "field-help", textContent: "Fixed translations: names whose reading cannot be guessed, recurring terms." }),
+    el("label", { textContent: "OCR fixes" }), ocr.node,
+    el("div", { className: "field-help", textContent: "Text the OCR misreads in this game's font, replaced before translation." }));
+  body.append(el("p", { className: "hint", textContent: p ? "Saved to profiles/" + p.file + ", keeping its comments, and applied at once." : "A new file in profiles/." }), grid, row);
+  save.addEventListener("click", async () => {
+    try {
+      const r = await api(`/api/games/${encodeURIComponent(game.id)}/profile`, {
+        method: "PUT",
+        body: {
+          match: match.value,
+          styles: [...styles.querySelectorAll("input:checked")].map((i) => i.value),
+          instructions: instructions.value,
+          glossary: glossary.read(),
+          ocr: ocr.read(),
+        },
+      });
+      game.profile = r.profile;
+      delete body.dataset.create;
+      gameMessage(row, "Saved and applied.", "ok");
+      api("/api/games").then((d) => { games = d.games; showGameList(game.id); });
+    } catch (error) { gameMessage(row, error.message, "bad"); }
+  });
+}
+
+showPage();
 </script>
 </body>
 </html>

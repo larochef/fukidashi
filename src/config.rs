@@ -86,7 +86,7 @@ pub struct Backend {
 }
 
 /// PP-OCR models: registered names are downloaded on first use, paths are used as is.
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Deserialize)]
 pub struct OcrConfig {
     /// Frames are resized to this width before OCR.
     pub width: u32,
@@ -143,7 +143,7 @@ pub struct RemoteConfig {
 
 /// A `llama-server` the app launches itself. Models are `owner/repo:file`
 /// specs resolved through the Hugging Face cache.
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct ServerConfig {
     /// Program to run (`~/` allowed) instead of a downloaded build; the
     /// `LLAMA_SERVER` environment variable overrides it.
@@ -247,7 +247,7 @@ fn default_outline() -> f32 {
     0.07
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Default, Deserialize)]
 pub struct Profile {
     /// Substring matched against RetroArch's `system__game` label.
     #[serde(rename = "match")]
@@ -263,6 +263,19 @@ pub struct Profile {
     /// Misreadings of the game's font, fixed before translation ("ヒンン" = "ヒント").
     #[serde(default)]
     pub ocr: BTreeMap<String, String>,
+    /// The file it was read from.
+    #[serde(skip)]
+    pub file: PathBuf,
+}
+
+impl Profile {
+    /// Whether RetroArch's label is this profile's game: `match` is part of
+    /// it, spaces and punctuation aside ("Tokimeki Memorial 4" and
+    /// "Tokimeki_Memorial_4" both match "Tokimeki_Memorial_4_JPN").
+    pub fn matches(&self, label: &str) -> bool {
+        use crate::memory::safe_name;
+        !self.pattern.is_empty() && (label.contains(&self.pattern) || safe_name(label).contains(&safe_name(&self.pattern)))
+    }
 }
 
 /// Instructions and glossary shared by every game of a genre.
@@ -277,7 +290,12 @@ struct Style {
 impl Config {
     pub fn load(path: &Path) -> anyhow::Result<Self> {
         let text = std::fs::read_to_string(path).with_context(|| format!("cannot read {}", path.display()))?;
-        let mut config: Config = toml::from_str(&text).with_context(|| format!("invalid config {}", path.display()))?;
+        Self::parse(&text).with_context(|| format!("invalid config {}", path.display()))
+    }
+
+    /// Reads a config file's text, with the profiles and styles it points to.
+    pub fn parse(text: &str) -> anyhow::Result<Self> {
+        let mut config: Config = toml::from_str(text)?;
         let ocr = &mut config.ocr;
         for path in [&mut ocr.detection, &mut ocr.recognition, &mut ocr.dictionary] {
             *path = expand_home(path);
@@ -294,7 +312,8 @@ impl Config {
             files.sort();
             for file in files {
                 let text = std::fs::read_to_string(&file)?;
-                let profile = toml::from_str(&text).with_context(|| format!("invalid profile {}", file.display()))?;
+                let mut profile: Profile = toml::from_str(&text).with_context(|| format!("invalid profile {}", file.display()))?;
+                profile.file = file;
                 config.profiles.push(profile);
             }
         }
@@ -321,6 +340,6 @@ impl Config {
     }
 
     pub fn profile_for(&self, label: &str) -> Option<&Profile> {
-        self.profiles.iter().find(|p| label.contains(&p.pattern))
+        self.profiles.iter().find(|p| p.matches(label))
     }
 }

@@ -23,11 +23,12 @@ pub struct GameMemory {
     pub names: BTreeMap<String, String>,
 }
 
-#[derive(Serialize, Deserialize)]
-struct Entry {
-    lang: String,
-    ja: String,
-    tr: String,
+/// One translated block.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Entry {
+    pub lang: String,
+    pub ja: String,
+    pub tr: String,
 }
 
 #[derive(Default, Serialize, Deserialize)]
@@ -45,16 +46,14 @@ impl GameMemory {
         let dir = data_dir.join(safe_name(label));
         let mut memory = Self { dir: Some(dir.clone()), ..Self::default() };
 
-        if let Ok(text) = std::fs::read_to_string(dir.join("memory.jsonl")) {
-            for entry in text.lines().filter_map(|l| serde_json::from_str::<Entry>(l).ok()) {
-                memory.translations.insert((entry.lang, entry.ja), entry.tr);
-            }
+        for entry in entries(&dir) {
+            memory.translations.insert((entry.lang, entry.ja), entry.tr);
         }
-        if let Ok(text) = std::fs::read_to_string(dir.join("glossary.toml")) {
-            match toml::from_str::<GlossaryFile>(&text) {
-                Ok(file) => memory.names = file.glossary,
-                Err(error) => tracing::warn!(%error, "invalid learned glossary, ignoring it"),
-            }
+        memory.names = names(&dir);
+        // The directory name loses the label's spaces and punctuation, which
+        // profiles match against.
+        if label_of(&dir).as_deref() != Some(label) {
+            memory.write(|dir| std::fs::write(dir.join("label.txt"), label));
         }
         tracing::info!(label, translations = memory.translations.len(), names = memory.names.len(), "game memory loaded");
         memory
@@ -84,11 +83,7 @@ impl GameMemory {
         }
         let added = self.names.len() - before;
         if added > 0 {
-            let text = toml::to_string(&GlossaryFile { glossary: self.names.clone() }).unwrap_or_default();
-            self.write(|dir| {
-                let header = "# Names learned from translations. Fix a reading here and restart the server.\n\n";
-                std::fs::write(dir.join("glossary.toml"), format!("{header}{text}"))
-            });
+            self.write(|dir| save_names(dir, &self.names));
         }
         added
     }
@@ -101,6 +96,63 @@ impl GameMemory {
     }
 }
 
-fn safe_name(label: &str) -> String {
+/// The translations saved in a game's directory, one per (language, text):
+/// the latest wins, in the order they were last written.
+pub fn entries(dir: &Path) -> Vec<Entry> {
+    let Ok(text) = std::fs::read_to_string(dir.join("memory.jsonl")) else {
+        return Vec::new();
+    };
+    let mut latest: HashMap<(String, String), usize> = HashMap::new();
+    let mut entries: Vec<Option<Entry>> = Vec::new();
+    for entry in text.lines().filter_map(|l| serde_json::from_str::<Entry>(l).ok()) {
+        if let Some(previous) = latest.insert((entry.lang.clone(), entry.ja.clone()), entries.len()) {
+            entries[previous] = None;
+        }
+        entries.push(Some(entry));
+    }
+    entries.into_iter().flatten().collect()
+}
+
+/// Rewrites a game's translations (after a correction or a deletion).
+pub fn save_entries(dir: &Path, entries: &[Entry]) -> std::io::Result<()> {
+    let mut text = String::new();
+    for entry in entries {
+        text.push_str(&serde_json::to_string(entry).map_err(std::io::Error::other)?);
+        text.push('\n');
+    }
+    std::fs::create_dir_all(dir)?;
+    let tmp = dir.join("memory.jsonl.tmp");
+    std::fs::write(&tmp, text)?;
+    std::fs::rename(tmp, dir.join("memory.jsonl"))
+}
+
+/// The names learned for a game: Japanese → romaji.
+pub fn names(dir: &Path) -> BTreeMap<String, String> {
+    let Ok(text) = std::fs::read_to_string(dir.join("glossary.toml")) else {
+        return BTreeMap::new();
+    };
+    match toml::from_str::<GlossaryFile>(&text) {
+        Ok(file) => file.glossary,
+        Err(error) => {
+            tracing::warn!(%error, "invalid learned glossary, ignoring it");
+            BTreeMap::new()
+        }
+    }
+}
+
+pub fn save_names(dir: &Path, names: &BTreeMap<String, String>) -> std::io::Result<()> {
+    let text = toml::to_string(&GlossaryFile { glossary: names.clone() }).map_err(std::io::Error::other)?;
+    let header = "# Names learned from translations; fix a reading here or in the settings page.\n\n";
+    std::fs::create_dir_all(dir)?;
+    std::fs::write(dir.join("glossary.toml"), format!("{header}{text}"))
+}
+
+/// RetroArch's label for the game whose memory is in `dir`, once recorded.
+pub fn label_of(dir: &Path) -> Option<String> {
+    std::fs::read_to_string(dir.join("label.txt")).ok().map(|l| l.trim().to_owned()).filter(|l| !l.is_empty())
+}
+
+/// The directory name of a game: its label with only safe characters.
+pub fn safe_name(label: &str) -> String {
     label.chars().map(|c| if c.is_alphanumeric() || c == '-' || c == '_' { c } else { '_' }).collect()
 }

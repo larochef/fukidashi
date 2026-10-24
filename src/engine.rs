@@ -58,9 +58,12 @@ pub enum Status {
 
 pub struct Engine {
     client: reqwest::Client,
-    config: TranslateConfig,
+    /// `[translate]` of config.toml, replaced when it is edited.
+    config: RwLock<TranslateConfig>,
     settings: RwLock<Settings>,
     server: Mutex<Option<ManagedServer>>,
+    /// The settings the running server started with (endpoint, server config).
+    started_with: RwLock<Option<(String, ServerConfig)>>,
     status: RwLock<Status>,
 }
 
@@ -79,11 +82,21 @@ impl Engine {
         };
         Ok(Arc::new(Self {
             client,
-            config: config.clone(),
+            config: RwLock::new(config.clone()),
             settings: RwLock::new(settings),
             server: Mutex::new(None),
+            started_with: RwLock::new(None),
             status: RwLock::new(Status::Stopped),
         }))
+    }
+
+    /// Takes an edited config; a local server applies it when restarted.
+    pub fn set_config(&self, config: &TranslateConfig) {
+        *self.config.write().unwrap() = config.clone();
+    }
+
+    pub fn config(&self) -> TranslateConfig {
+        self.config.read().unwrap().clone()
     }
 
     pub fn settings(&self) -> Settings {
@@ -101,16 +114,17 @@ impl Engine {
     /// The endpoint translations go to, with its key.
     pub fn backend(&self) -> Backend {
         let settings = self.settings.read().unwrap();
+        let config = self.config.read().unwrap();
         match settings.provider {
-            Provider::Local => self.config.backend.clone(),
-            Provider::Remote => remote_backend(&self.config.backend, &settings.remote, api_key().map(|(key, _)| key)),
+            Provider::Local => config.backend.clone(),
+            Provider::Remote => remote_backend(&config.backend, &settings.remote, api_key().map(|(key, _)| key)),
         }
     }
 
     /// The `[translate.server]` settings with the page's choices.
     pub fn server_config(&self) -> Option<ServerConfig> {
         let local = self.settings.read().unwrap().local.clone();
-        self.config.server.clone().map(|mut server| {
+        self.config.read().unwrap().server.clone().map(|mut server| {
             server.runtime = local.runtime;
             server.release = local.release;
             server.update = local.update;
@@ -119,7 +133,7 @@ impl Engine {
     }
 
     pub fn local_port(&self) -> Option<u16> {
-        server::port(&self.config.backend.url).ok()
+        server::port(&self.config.read().unwrap().backend.url).ok()
     }
 
     /// Starts the local server if the local model is in use and none runs.
@@ -136,7 +150,8 @@ impl Engine {
             return;
         }
         self.set_status(Status::Starting);
-        match server::ensure(&self.client, &self.config.backend.url, &config).await {
+        let url = self.config.read().unwrap().backend.url.clone();
+        match server::ensure(&self.client, &url, &config).await {
             Ok(Some(started)) => {
                 // Switched to a remote provider while it was loading.
                 if self.settings.read().unwrap().provider != Provider::Local {
@@ -145,6 +160,7 @@ impl Engine {
                     return;
                 }
                 self.set_status(Status::Ready(started.program.clone()));
+                *self.started_with.write().unwrap() = Some((url, config));
                 *self.server.lock().await = Some(started);
             }
             Ok(None) => self.set_status(Status::External),
@@ -155,8 +171,19 @@ impl Engine {
         }
     }
 
+    /// Whether the running local server started with other settings than
+    /// the current ones (model, arguments, build).
+    pub fn needs_restart(&self) -> bool {
+        let current = self.server_config().map(|server| (self.config.read().unwrap().backend.url.clone(), server));
+        match &*self.started_with.read().unwrap() {
+            Some(started) => matches!(self.status(), Status::Ready(_)) && current.as_ref() != Some(started),
+            None => false,
+        }
+    }
+
     /// Stops the local server we started (killing it frees its memory).
     pub async fn stop(&self) {
+        *self.started_with.write().unwrap() = None;
         if let Some(server) = self.server.lock().await.take() {
             info!(program = server.program, "stopping the translation server");
             drop(server);

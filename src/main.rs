@@ -7,12 +7,14 @@
 
 mod config;
 mod engine;
+mod games;
 mod llm;
 mod memory;
 mod ocr;
 mod render;
 mod runtime;
 mod server;
+mod settings;
 mod translate;
 mod web;
 
@@ -20,7 +22,7 @@ use std::{
     collections::HashMap,
     io::Cursor,
     path::{Path, PathBuf},
-    sync::{Arc, Mutex},
+    sync::{Arc, Mutex, RwLock},
     time::{Instant, SystemTime, UNIX_EPOCH},
 };
 
@@ -49,14 +51,75 @@ use crate::{
 const NO_TEXT: &str = "No text found.";
 
 struct App {
-    config: Config,
+    config_path: PathBuf,
+    /// `listen` and `data_dir` as the app started: changing them needs a restart.
+    started_with: (String, String),
+    /// Replaced as a whole when the settings change.
+    live: RwLock<Arc<Live>>,
     client: reqwest::Client,
     /// The local model or a remote provider, switchable from the web page.
     engine: Arc<Engine>,
-    ocr: Ocr,
     translator: Translator,
-    renderer: Renderer,
     last_frame: Mutex<Option<LastFrame>>,
+}
+
+/// What the settings shape: a request works on one snapshot from start to end.
+struct Live {
+    config: Config,
+    ocr: Arc<Ocr>,
+    renderer: Renderer,
+}
+
+/// What a settings change needs beyond its hot application.
+#[derive(Debug, Default, serde::Serialize)]
+struct Reloaded {
+    /// Settings read only at start (`listen`, `data_dir`).
+    restart_app: Vec<&'static str>,
+    /// The local server's settings changed: a server restart applies them.
+    restart_server: bool,
+}
+
+impl App {
+    fn live(&self) -> Arc<Live> {
+        self.live.read().unwrap().clone()
+    }
+
+    /// Validates a new config text, applies it (rebuilding the OCR only if its
+    /// settings changed) and, if it is new, saves it.
+    async fn reload(&self, text: &str) -> anyhow::Result<Reloaded> {
+        let config = Config::parse(text)?;
+        let old = self.live();
+        let ocr = if config.ocr == old.config.ocr {
+            old.ocr.clone()
+        } else {
+            let ocr_config = config.ocr.clone();
+            Arc::new(tokio::task::spawn_blocking(move || Ocr::new(&ocr_config)).await??)
+        };
+        let renderer = Renderer::new(&config.render).context("cannot load font")?;
+
+        let before = std::fs::read_to_string(&self.config_path).unwrap_or_default();
+        if before != text {
+            let tmp = self.config_path.with_extension("toml.tmp");
+            std::fs::write(&tmp, text)?;
+            std::fs::rename(&tmp, &self.config_path).with_context(|| format!("cannot write {}", self.config_path.display()))?;
+        }
+
+        let mut reloaded = Reloaded::default();
+        if config.listen != self.started_with.0 {
+            reloaded.restart_app.push("listen");
+        }
+        if config.data_dir != self.started_with.1 {
+            reloaded.restart_app.push("data_dir");
+        }
+
+        self.engine.set_config(&config.translate);
+        reloaded.restart_server = self.engine.needs_restart();
+        *self.live.write().unwrap() = Arc::new(Live { config, ocr, renderer });
+        // The overlay of the last screen may look different now.
+        *self.last_frame.lock().unwrap() = None;
+        info!(?reloaded, "settings applied");
+        Ok(reloaded)
+    }
 }
 
 /// The previous answer, reused when the same screen is requested again.
@@ -75,14 +138,15 @@ struct Outcome {
 impl App {
     async fn run(&self, frame: &DynamicImage, label: &str, lang: &str, ocr_only: bool) -> anyhow::Result<Outcome> {
         let started = Instant::now();
-        let blocks = self.ocr.detect(&self.config.ocr, frame).await.context("OCR failed")?;
+        let live = self.live();
+        let blocks = live.ocr.detect(&live.config.ocr, frame).await.context("OCR failed")?;
         let ocr_ms = started.elapsed().as_millis() as u64;
         if blocks.is_empty() || ocr_only {
             info!(ocr_ms, blocks = blocks.len(), "ocr done");
             return Ok(Outcome { blocks, translations: Vec::new(), overlay: None });
         }
 
-        let profile = self.config.profile_for(label);
+        let profile = live.config.profile_for(label);
         let texts: Vec<String> = blocks
             .iter()
             .map(|block| {
@@ -95,13 +159,13 @@ impl App {
             .collect();
         let (translations, cached) = self
             .translator
-            .translate(&self.config.translate, &self.engine.backend(), profile, label, lang, &texts)
+            .translate(&live.config.translate, &self.engine.backend(), profile, label, lang, &texts)
             .await
             .context("translation failed")?;
         let translate_ms = started.elapsed().as_millis() as u64 - ocr_ms;
 
         let items: Vec<(&Block, &str)> = blocks.iter().zip(translations.iter().map(String::as_str)).collect();
-        let overlay = self.renderer.render(frame, &items);
+        let overlay = live.renderer.render(frame, &items);
         let total_ms = started.elapsed().as_millis() as u64;
         info!(
             ocr_ms,
@@ -142,13 +206,17 @@ async fn run() -> anyhow::Result<()> {
     let data_dir = (serving && !config.data_dir.is_empty()).then(|| PathBuf::from(&config.data_dir));
     let client = reqwest::Client::new();
     let app = Arc::new(App {
-        renderer: Renderer::new(&config.render).context("cannot load font")?,
-        ocr: Ocr::new(&config.ocr)?,
+        config_path: PathBuf::from(&config_path),
+        started_with: (config.listen.clone(), config.data_dir.clone()),
         engine: Engine::new(client.clone(), &config.translate)?,
         translator: Translator::new(client.clone(), data_dir),
         client,
         last_frame: Mutex::new(None),
-        config,
+        live: RwLock::new(Arc::new(Live {
+            renderer: Renderer::new(&config.render).context("cannot load font")?,
+            ocr: Arc::new(Ocr::new(&config.ocr)?),
+            config,
+        })),
     });
 
     // The server starts in the background so that the page shows its progress
@@ -189,10 +257,7 @@ fn take_flag(args: &mut Vec<String>, name: &str) -> bool {
 }
 
 async fn serve(app: Arc<App>) -> anyhow::Result<()> {
-    if !app.config.capture_dir.is_empty() {
-        std::fs::create_dir_all(&app.config.capture_dir)?;
-    }
-    let listen = app.config.listen.clone();
+    let listen = app.live().config.listen.clone();
     let router = Router::new()
         .route("/", get(web::page).post(handle_request))
         .merge(web::routes())
@@ -229,7 +294,8 @@ async fn respond(app: &App, query: &HashMap<String, String>, body: &[u8]) -> any
     // RetroArch builds the body by hand: parse it ourselves rather than trust the Content-Type.
     let request: Value = serde_json::from_slice(body).context("invalid JSON")?;
     let label = request.get("label").and_then(Value::as_str).unwrap_or("unknown");
-    let lang = query.get("target_lang").map_or(app.config.default_target_lang.as_str(), String::as_str);
+    let live = app.live();
+    let lang = query.get("target_lang").map_or(live.config.default_target_lang.as_str(), String::as_str);
 
     let encoded = request.get("image").and_then(Value::as_str).context("missing image")?;
     let png = B64.decode(encoded).context("invalid base64")?;
@@ -243,7 +309,7 @@ async fn respond(app: &App, query: &HashMap<String, String>, body: &[u8]) -> any
             info!("same screen as last request, reusing overlay");
             return Ok(last.response.clone());
         }
-    save_capture(&app.config.capture_dir, label, &png);
+    save_capture(&live.config.capture_dir, label, &png);
 
     let outcome = app.run(&frame, label, lang, false).await?;
     for (block, translation) in outcome.blocks.iter().zip(&outcome.translations) {
@@ -279,7 +345,7 @@ fn save_capture(dir: &str, label: &str, png: &[u8]) {
         .map(|c| if c.is_alphanumeric() || c == '-' || c == '_' { c } else { '_' })
         .collect();
     let path = format!("{dir}/{millis}_{safe_label}.png");
-    if let Err(error) = std::fs::write(&path, png) {
+    if let Err(error) = std::fs::create_dir_all(dir).and_then(|()| std::fs::write(&path, png)) {
         warn!(path, %error, "cannot save capture");
     }
 }
@@ -293,7 +359,7 @@ fn encode_png(image: &RgbaImage) -> anyhow::Result<Vec<u8>> {
 /// Runs the pipeline on saved captures and writes `<name>.overlay.png` and
 /// `<name>.composite.png` (or `<name>.boxes.png` with `--ocr-only`).
 async fn replay(app: Arc<App>, mut args: Vec<String>) -> anyhow::Result<()> {
-    let lang = take_option(&mut args, "--lang").unwrap_or_else(|| app.config.default_target_lang.clone());
+    let lang = take_option(&mut args, "--lang").unwrap_or_else(|| app.live().config.default_target_lang.clone());
     let forced_label = take_option(&mut args, "--label");
     let out_dir = PathBuf::from(take_option(&mut args, "--out").unwrap_or_else(|| "replay".into()));
     let ocr_only = take_flag(&mut args, "--ocr-only");
@@ -314,11 +380,11 @@ async fn replay(app: Arc<App>, mut args: Vec<String>) -> anyhow::Result<()> {
             }
         }
         if ocr_only {
-            let boxes = render::draw_boxes(&frame, &outcome.blocks, app.config.render.width);
+            let boxes = render::draw_boxes(&frame, &outcome.blocks, app.live().config.render.width);
             boxes.save(out_dir.join(format!("{stem}.boxes.png")))?;
         } else if let Some(overlay) = &outcome.overlay {
             overlay.save(out_dir.join(format!("{stem}.overlay.png")))?;
-            let layout = app.renderer.layout(frame.width(), frame.height());
+            let layout = app.live().renderer.layout(frame.width(), frame.height());
             render::composite(&frame, overlay, layout).save(out_dir.join(format!("{stem}.composite.png")))?;
         }
     }
@@ -341,10 +407,11 @@ struct BenchCase {
 /// Translates the cases of a benchmark file in order (so history builds up as
 /// in a play session) and prints each translation with its latency.
 async fn bench(app: Arc<App>, mut args: Vec<String>) -> anyhow::Result<()> {
-    let lang = take_option(&mut args, "--lang").unwrap_or_else(|| app.config.default_target_lang.clone());
+    let lang = take_option(&mut args, "--lang").unwrap_or_else(|| app.live().config.default_target_lang.clone());
     let path = args.first().context("missing benchmark file")?;
     let file: BenchFile = toml::from_str(&std::fs::read_to_string(path)?)?;
-    let profile = app.config.profile_for(&file.label);
+    let live = app.live();
+    let profile = live.config.profile_for(&file.label);
     let backend = app.engine.backend();
     println!("model: {} ({})", backend.model, backend.url);
 
@@ -353,7 +420,7 @@ async fn bench(app: Arc<App>, mut args: Vec<String>) -> anyhow::Result<()> {
         let started = Instant::now();
         let (translations, _) = app
             .translator
-            .translate(&app.config.translate, &app.engine.backend(), profile, &file.label, &lang, &case.blocks)
+            .translate(&live.config.translate, &app.engine.backend(), profile, &file.label, &lang, &case.blocks)
             .await?;
         let ms = started.elapsed().as_millis();
         total_ms += ms;

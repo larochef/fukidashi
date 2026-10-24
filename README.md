@@ -79,6 +79,16 @@ while the app runs:
   sent, never the image. Switching to it stops the local server and frees its memory.
 - **Test the translation**: translates one line with the real request, so a
   provider that rejects it shows up here rather than in the game.
+- **Settings**: the main settings of `config.toml` as a form (target language,
+  OCR, prompt, sampling, model, overlay colours and screen), plus the whole file
+  in an editor. Changes are checked, written back keeping the file's comments,
+  and applied at once; the page says when the app (`listen`, `data_dir`) or the
+  local server (model, arguments) needs a restart. "Reload from disk" applies a
+  file edited by hand, profiles and styles included.
+- **Games**: every game met (or with a profile). Its translations, newest
+  first, by language and by text: correct one (it is used as is from then on)
+  or delete it (translated again next time); the names it learned; its profile
+  (instructions, styles, glossary, OCR fixes), created here when it has none.
 
 Choices made in the page are saved in `~/.config/game-translator/engine.toml`
 and override `config.toml`; the API key goes to `secrets.toml` next to it,

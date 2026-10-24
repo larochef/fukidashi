@@ -83,8 +83,7 @@ impl Renderer {
     /// the overlay over the whole screen: the game then sits in the middle,
     /// between black bars, as on screen.
     pub fn layout(&self, frame_width: u32, frame_height: u32) -> Layout {
-        let frame_aspect = frame_width as f32 / frame_height.max(1) as f32;
-        let game = if (frame_aspect / (4.0 / 3.0)).ln().abs() < (frame_aspect / (16.0 / 9.0)).ln().abs() { 4.0 / 3.0 } else { 16.0 / 9.0 };
+        let game = game_aspect(frame_width, frame_height);
         let screen = match self.screen {
             Screen::Auto => primary_screen_aspect().unwrap_or(game),
             Screen::Game => game,
@@ -446,6 +445,21 @@ impl Renderer {
     }
 }
 
+/// The shape the game is shown at. A frame that has exactly a usual shape has
+/// square pixels and keeps it: 16:9 (PSP), 3:2 (Game Boy Advance), 10:9 (Game
+/// Boy), 4:3. A much wider one has tall pixels, as consoles drawing 240 lines
+/// over a TV screen (PS1 at 512x240, here 2048x960): it is shown at 4:3. Any
+/// other is shown at the nearest of 4:3 and 16:9 (PS2 at 2560x1792: 4:3).
+fn game_aspect(frame_width: u32, frame_height: u32) -> f32 {
+    let frame = frame_width as f32 / frame_height.max(1) as f32;
+    let distance = |aspect: f32| (frame / aspect).ln().abs();
+    const SQUARE: [f32; 4] = [16.0 / 9.0, 3.0 / 2.0, 10.0 / 9.0, 4.0 / 3.0];
+    if let Some(&aspect) = SQUARE.iter().find(|&&a| distance(a) < 0.02) {
+        return aspect;
+    }
+    if frame > 2.0 || distance(4.0 / 3.0) < distance(16.0 / 9.0) { 4.0 / 3.0 } else { 16.0 / 9.0 }
+}
+
 /// Aspect of the primary screen's current mode, from `xrandr` (X11, or
 /// XWayland under GNOME, KDE and most Wayland desktops).
 fn primary_screen_aspect() -> Option<f32> {
@@ -784,3 +798,24 @@ fn blend(dst: &mut Rgba<u8>, src: Rgba<u8>) {
 
 
 
+
+#[cfg(test)]
+mod tests {
+    use super::game_aspect;
+
+    #[test]
+    fn shows_frames_at_their_console_shape() {
+        let shape = |w, h| (game_aspect(w, h) * 100.0).round() / 100.0;
+        // Square pixels: the frame's own shape.
+        assert_eq!(shape(480, 272), 1.78); // PSP
+        assert_eq!(shape(1440, 816), 1.78); // PSP, upscaled
+        assert_eq!(shape(240, 160), 1.5); // Game Boy Advance
+        assert_eq!(shape(160, 144), 1.11); // Game Boy
+        assert_eq!(shape(640, 480), 1.33);
+        // Tall pixels: a TV screen.
+        assert_eq!(shape(2048, 960), 1.33); // PS1, 512x240 upscaled
+        assert_eq!(shape(256, 224), 1.33); // SNES
+        assert_eq!(shape(2560, 1792), 1.33); // PS2
+        assert_eq!(shape(1920, 1000), 1.78);
+    }
+}

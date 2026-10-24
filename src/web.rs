@@ -24,6 +24,7 @@ use crate::{
     config::{Provider, RemoteConfig},
     engine::{self, Settings},
     runtime, server,
+    settings::{self, Edit},
     translate::Translator,
 };
 
@@ -38,6 +39,10 @@ pub fn routes() -> Router<Arc<App>> {
         .route("/api/engine/restart", post(restart_engine))
         .route("/api/engine/check", post(check_update))
         .route("/api/logs", get(logs))
+        .route("/api/config", get(config_state).put(update_config))
+        .route("/api/config/raw", axum::routing::put(update_raw_config))
+        .route("/api/config/reload", post(reload_config))
+        .merge(crate::games::routes())
 }
 
 /// The settings page; RetroArch only ever posts to `/`.
@@ -46,7 +51,7 @@ pub async fn page() -> Html<&'static str> {
 }
 
 /// An error as `{ "error": ... }`, with a status code the page can show.
-struct ApiError(StatusCode, String);
+pub struct ApiError(pub StatusCode, pub String);
 
 impl IntoResponse for ApiError {
     fn into_response(self) -> Response {
@@ -76,6 +81,7 @@ async fn engine_state(State(app): State<Arc<App>>) -> Json<Value> {
     Json(json!({
         "provider": settings.provider,
         "status": app.engine.status(),
+        "restart_needed": app.engine.needs_restart(),
         "local": {
             "managed": server.is_some(),
             "runtime": settings.local.runtime,
@@ -122,17 +128,18 @@ struct TestRequest {
 /// Translates one line with the real request (system prompt, JSON schema):
 /// what a provider rejects shows up here rather than in the game.
 async fn test_engine(State(app): State<Arc<App>>, Json(test): Json<TestRequest>) -> Result<Json<Value>, ApiError> {
+    let config = app.engine.config();
     let backend = match test.provider {
-        Provider::Local => app.config.translate.backend.clone(),
+        Provider::Local => config.backend.clone(),
         Provider::Remote => {
             let key = test.api_key.filter(|k| !k.trim().is_empty()).map(|k| k.trim().to_owned()).or_else(|| engine::api_key().map(|(k, _)| k));
-            engine::remote_backend(&app.config.translate.backend, &test.remote, key)
+            engine::remote_backend(&config.backend, &test.remote, key)
         }
     };
     let started = Instant::now();
     let text = "相原「おはよう、星乃さん。今日もいい天気だね」".to_owned();
     let result = Translator::new(app.client.clone(), None)
-        .translate(&app.config.translate, &backend, None, "test", "en", std::slice::from_ref(&text))
+        .translate(&config, &backend, None, "test", "en", std::slice::from_ref(&text))
         .await;
     let ms = started.elapsed().as_millis() as u64;
     Ok(Json(match result {
@@ -156,6 +163,53 @@ async fn check_update(State(app): State<Arc<App>>) -> Result<Json<Value>, ApiErr
     let variant = runtime::variant(&server.runtime)?;
     tokio::spawn(runtime::check_for_update(app.client.clone(), server.update, server.release, variant, true));
     Ok(Json(json!({ "started": true })))
+}
+
+async fn config_state(State(app): State<Arc<App>>) -> Result<Json<Value>, ApiError> {
+    let text = std::fs::read_to_string(&app.config_path).map_err(anyhow::Error::from)?;
+    Ok(Json(json!({
+        "path": std::fs::canonicalize(&app.config_path).unwrap_or(app.config_path.clone()),
+        "values": settings::to_json(&text)?,
+        "text": text,
+    })))
+}
+
+#[derive(Deserialize)]
+struct ConfigEdits {
+    edits: Vec<Edit>,
+}
+
+/// Changes some settings in config.toml (comments kept) and applies them.
+async fn update_config(State(app): State<Arc<App>>, Json(body): Json<ConfigEdits>) -> Result<Json<Value>, ApiError> {
+    let text = std::fs::read_to_string(&app.config_path).map_err(anyhow::Error::from)?;
+    let edited = settings::apply(&text, &body.edits)?;
+    let reloaded = app.reload(&edited).await?;
+    let mut state = config_state(State(app)).await?.0;
+    state["reloaded"] = json!(reloaded);
+    Ok(Json(state))
+}
+
+#[derive(Deserialize)]
+struct RawConfig {
+    text: String,
+}
+
+/// Replaces config.toml as a whole, once it is known to be valid.
+async fn update_raw_config(State(app): State<Arc<App>>, Json(body): Json<RawConfig>) -> Result<Json<Value>, ApiError> {
+    let reloaded = app.reload(&body.text).await?;
+    let mut state = config_state(State(app)).await?.0;
+    state["reloaded"] = json!(reloaded);
+    Ok(Json(state))
+}
+
+/// Applies config.toml as it is on disk (after editing it by hand), with the
+/// profiles and styles.
+async fn reload_config(State(app): State<Arc<App>>) -> Result<Json<Value>, ApiError> {
+    let text = std::fs::read_to_string(&app.config_path).map_err(anyhow::Error::from)?;
+    let reloaded = app.reload(&text).await?;
+    let mut state = config_state(State(app)).await?.0;
+    state["reloaded"] = json!(reloaded);
+    Ok(Json(state))
 }
 
 /// The end of the app's log, or of the local server's (`?source=server`).

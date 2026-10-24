@@ -3,7 +3,7 @@
 
 use std::{
     collections::{BTreeMap, HashMap},
-    path::PathBuf,
+    path::{Path, PathBuf},
     sync::{LazyLock, Mutex},
 };
 
@@ -13,7 +13,7 @@ use serde_json::json;
 use crate::{
     config::{Backend, Profile, TranslateConfig},
     llm,
-    memory::GameMemory,
+    memory::{GameMemory, safe_name},
 };
 
 pub struct Translator {
@@ -122,6 +122,27 @@ impl Translator {
         }
 
         Ok((results.into_iter().map(Option::unwrap_or_default).collect(), cached))
+    }
+
+    /// Where a game's memory is saved (`None`: memory disabled).
+    pub fn game_dir(&self, dir_name: &str) -> Option<PathBuf> {
+        self.data_dir.as_ref().map(|d| d.join(dir_name))
+    }
+
+    pub fn data_dir(&self) -> Option<&Path> {
+        self.data_dir.as_deref()
+    }
+
+    /// Runs `edit` on a game's saved files while no translation writes them,
+    /// then forgets what was loaded from them, and the recent exchanges (which
+    /// may repeat a corrected translation): the next request reads them again.
+    pub fn edit_game<T>(&self, dir_name: &str, edit: impl FnOnce(&Path) -> T) -> Option<T> {
+        let dir = self.game_dir(dir_name)?;
+        let mut state = self.state.lock().unwrap();
+        let result = edit(&dir);
+        state.games.retain(|label, _| safe_name(label) != dir_name);
+        state.history.retain(|(label, _), _| safe_name(label) != dir_name);
+        Some(result)
     }
 
     fn game<'a>(&self, state: &'a mut State, label: &str) -> &'a mut GameMemory {
