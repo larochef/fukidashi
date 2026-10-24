@@ -1,0 +1,15 @@
+# Profile for one game: applied when RetroArch's label (`system__game name`)
+# contains `match`. See tokimeki-memorial-4.toml.
+
+match = "KimiKiss"
+styles = ["dating-sim"]
+
+instructions = """
+Game: KimiKiss (PS2, 2006), set in a high school.
+On the school map, the short labels are places of the school: translate them as rooms, e.g. 家庭 = Home Ec room, 理科 = Science room, 音楽 = Music room, 図書 = Library, 保健 = Nurse's office, 食堂 = Cafeteria; 休み1 / 休み2 / 昼休み / 放課後 are the time slots of the day.
+"""
+
+# Misreadings of the game's font, fixed before translation.
+[ocr]
+"ヒンン" = "ヒント"
+"LベIル" = "レベル"

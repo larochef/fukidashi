@@ -1,0 +1,80 @@
+listen = "127.0.0.1:4404"
+# Frames received from RetroArch are saved here (empty string to disable).
+capture_dir = "captures"
+# Used when RetroArch does not send `target_lang`.
+default_target_lang = "en"
+
+[ocr]
+# PP-OCR (detection + recognition) on CPU. Model names are downloaded on first
+# use (SHA-256 checked) into $OAR_HOME, by default ~/.cache/game-translator/ocr;
+# a path (~/... allowed) uses a local file instead.
+detection = "pp-ocrv6_small_det.onnx"
+recognition = "pp-ocrv6_medium_rec.onnx"
+dictionary = "ppocrv6_dict.txt"
+min_confidence = 0.6
+# Minimum mean text score inside a detected box: lower finds faint or stylized
+# labels (KimiKiss's スキ needs 0.5), at the cost of a few more stray fragments.
+box_threshold = 0.5
+# Frames are resized to this width before OCR: small pixel fonts read much better
+# upscaled (480 px PSP frame -> 960), and big frames only cost time.
+width = 960
+
+[translate]
+url = "http://127.0.0.1:8194/v1/chat/completions"
+model = "gemma-4-26b-a4b"
+temperature = 0.1
+max_tokens = 512
+# Number of past exchanges kept as context; trimmed to half when exceeded.
+history = 16
+extra = { chat_template_kwargs = { enable_thinking = false } }
+system_prompt = """
+You translate Japanese video game text into natural {lang} for a player who is learning Japanese.
+Rules:
+- Keep Japanese honorifics and forms of address as they are (-san, -kun, -chan, -sama, -senpai, -sensei, onii-chan...).
+- Keep the speaker's tone and register (casual, polite, rough, childish).
+- Give one translation per block: never alternatives ("Home Economics/Home Ec."), notes or explanations.
+- Write numbers with Latin digits (〇点 = 0 points).
+- Character names in romaji, family/given order as in the original.
+- A speaker name before 「」 stays as a prefix: Name: "..."; unknown speakers "???" stay "???".
+- Input: a JSON object of text blocks from one screen, keyed by id; ⏎ marks a line break in the original. Blocks are independent, but may share context.
+- Output: a JSON object with the same ids, each holding the translation of that block only, without ⏎. Write quotation marks as “ ”, never as straight quotes. Join lines that form one sentence; keep a line break (\\n) only between separate items, as in a list or a profile card.
+- Also return "names": every person name found in the blocks, as written in Japanese, mapped to the romaji you used ({} if none). Use the readings of the glossary and of the names already used, when given.
+"""
+
+# Started by the app when nothing answers on `url` (remove this section to run
+# your own server). Models are `owner/repo:file` on Hugging Face, downloaded once
+# into the Hugging Face cache. Set LLAMA_SERVER to use another llama.cpp build.
+[translate.server]
+command = "llama-server"
+model = "unsloth/gemma-4-26b-a4b-it-GGUF:gemma-4-26B-A4B-it-UD-Q4_K_XL.gguf"
+# Speculative decoding (multi-token prediction); dropped if your llama.cpp rejects it.
+draft = "unsloth/gemma-4-26b-a4b-it-GGUF:MTP/mtp-gemma-4-26B-A4B-it-Q8_0.gguf"
+draft_args = ["--spec-type", "draft-mtp", "-ngld", "999"]
+# Thinking off: Gemma 4 otherwise spends its token budget reasoning.
+args = [
+    "-ngl", "999", "-c", "16384", "-np", "1", "-fa", "on", "--no-webui",
+    "--reasoning-budget", "0", "--chat-template-kwargs", '{"enable_thinking":false}',
+]
+
+[render]
+# Font for the translations (bundled Noto Sans Bold when unset; the bundled
+# Noto Sans JP Bold draws the characters it lacks: ♡, ♪, →, Japanese), e.g.:
+# font = "~/.local/share/fonts/MyFont.ttf"
+# Overlay width in pixels; RetroArch stretches it over the game (or the whole
+# screen, see screen_aspect).
+width = 1920
+# Used where the game's box behind the text is not a plain colour (a picture, a
+# gradient); otherwise the backdrop takes that box's colour, with black or white
+# text, whichever reads better (sample_background = false: always these).
+background = [16, 16, 24, 240]
+text_color = [255, 255, 255, 255]
+sample_background = true
+# Outline in the backdrop colour around the letters, as a fraction of the font
+# size (0 to disable): keeps text readable over a see-through backdrop.
+outline = 0.07
+# RetroArch 1.22 and older stretch the overlay over the whole screen, black bars
+# included, so a 4:3 game on a 16:9 screen needs the screen's aspect: "auto"
+# reads the primary screen's current mode (xrandr), or set it (e.g. "16:9").
+# Newer RetroArch builds fit the overlay to the game: use "game".
+screen_aspect = "auto"
+

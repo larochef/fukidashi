@@ -1,0 +1,18 @@
+# Genre style: Japanese dating sims (ren'ai games) set in high school.
+# Referenced by game profiles with `styles = ["dating-sim"]`.
+
+instructions = """
+Genre: dating sim. High school students meet, date and discover love; most text is dialogue between classmates.
+- Character names (given names and family names) are never translated: write them in romaji.
+- Keep honorifics and forms of address in romaji, attached to the name with a hyphen (Miyako-chan, Kobayashi-kun, Tanaka-sensei), or alone when used as a name (Senpai, Onii-chan), to keep all the subtlety of the Japanese.
+- Keep each character's voice: shy, teasing, tsundere, boastful, polite... Teenagers speak casually; keep stammers, elongated words and trailing "..." as they are.
+- Romantic nuance matters: do not flatten hints of affection, embarrassment or jealousy.
+"""
+
+[glossary]
+"先輩" = "Senpai"
+"後輩" = "Kōhai"
+"幼なじみ" = "childhood friend"
+"告白" = "love confession"
+"好感度" = "affection"
+"帰宅部" = "Go-Home Club"

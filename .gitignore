@@ -1,0 +1,11 @@
+# Build output
+/target
+
+# Play data: frames sent by RetroArch, per-game translation memory and learned names
+/captures
+/data
+
+# Local test outputs and logs
+/replay
+/bench
+*.log

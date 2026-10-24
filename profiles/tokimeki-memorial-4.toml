@@ -1,0 +1,16 @@
+# Profile for one game: applied when RetroArch's label (`system__game name`)
+# contains `match`. Styles (in `styles/`) come first; this game's instructions
+# and glossary are added after them and take precedence. The glossary pins names
+# whose reading can't be guessed from the kanji.
+
+match = "Tokimeki_Memorial_4"
+styles = ["dating-sim"]
+
+instructions = """
+Game: Tokimeki Memorial 4 (PSP, 2009).
+"""
+
+[glossary]
+"大倉都子" = "Ōkura Miyako"
+"都子" = "Miyako"
+"小林学" = "Kobayashi Manabu"
