@@ -840,6 +840,32 @@ dependencies = [
 ]
 
 [[package]]
+name = "fukidashi"
+version = "0.1.0"
+dependencies = [
+ "ab_glyph",
+ "anyhow",
+ "axum",
+ "base64 0.22.1",
+ "flate2",
+ "hf-hub",
+ "image",
+ "oar-ocr",
+ "regex",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "sha2",
+ "tar",
+ "tokio",
+ "toml",
+ "toml_edit",
+ "tracing",
+ "tracing-subscriber",
+ "zip",
+]
+
+[[package]]
 name = "futures"
 version = "0.3.34"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -925,32 +951,6 @@ dependencies = [
  "memchr",
  "pin-project-lite",
  "slab",
-]
-
-[[package]]
-name = "game-translator"
-version = "0.1.0"
-dependencies = [
- "ab_glyph",
- "anyhow",
- "axum",
- "base64 0.22.1",
- "flate2",
- "hf-hub",
- "image",
- "oar-ocr",
- "regex",
- "reqwest",
- "serde",
- "serde_json",
- "sha2",
- "tar",
- "tokio",
- "toml",
- "toml_edit",
- "tracing",
- "tracing-subscriber",
- "zip",
 ]
 
 [[package]]

@@ -9,3 +9,8 @@
 /replay
 /bench
 *.log
+/gnome-extension/schemas/gschemas.compiled
+
+# Local IDE files
+/.idea
+

@@ -1,10 +1,18 @@
 //! RetroArch AI Service endpoint: OCR → translation → overlay, all local.
 //!
+//! Settings: the shipped ones (the repository's `config.toml`, profiles and
+//! styles, embedded), with the user's over them: `~/.config/fukidashi/`, or
+//! the file given with `--config`.
+//!
 //! Usage:
-//!   game-translator [--config FILE] [serve]
-//!   game-translator [--config FILE] replay [--lang CODE] [--label LABEL] [--ocr-only] [--out DIR] [--fixtures DIR] CAPTURE.png...
-//!   game-translator [--config FILE] bench [--lang CODE] CASES.toml
+//!   fukidashi [--config FILE] [serve]
+//!   fukidashi [--config FILE] open | stop
+//!   fukidashi [--config FILE] setup local | setup remote URL MODEL [--key KEY]
+//!   fukidashi --version
+//!   fukidashi [--config FILE] replay [--lang CODE] [--label LABEL] [--ocr-only] [--out DIR] [--fixtures DIR] CAPTURE.png...
+//!   fukidashi [--config FILE] bench [--lang CODE] CASES.toml
 
+mod commands;
 mod config;
 mod engine;
 mod games;
@@ -15,13 +23,14 @@ mod render;
 mod runtime;
 mod server;
 mod settings;
+mod system;
 mod translate;
 mod web;
 
 use std::{
     collections::HashMap,
     io::Cursor,
-    path::{Path, PathBuf},
+    path::PathBuf,
     sync::{Arc, Mutex, RwLock},
     time::{Instant, SystemTime, UNIX_EPOCH},
 };
@@ -51,6 +60,7 @@ use crate::{
 const NO_TEXT: &str = "No text found.";
 
 struct App {
+    /// The user's settings file: what differs from the shipped settings.
     config_path: PathBuf,
     /// `listen` and `data_dir` as the app started: changing them needs a restart.
     started_with: (String, String),
@@ -61,6 +71,8 @@ struct App {
     engine: Arc<Engine>,
     translator: Translator,
     last_frame: Mutex<Option<LastFrame>>,
+    /// Notified to stop the app (`fukidashi stop`).
+    quit: Arc<tokio::sync::Notify>,
 }
 
 /// What the settings shape: a request works on one snapshot from start to end.
@@ -84,8 +96,8 @@ impl App {
         self.live.read().unwrap().clone()
     }
 
-    /// Validates a new config text, applies it (rebuilding the OCR only if its
-    /// settings changed) and, if it is new, saves it.
+    /// Validates a new text of the user's settings file, applies it (rebuilding
+    /// the OCR only if its settings changed) and, if it is new, saves it.
     async fn reload(&self, text: &str) -> anyhow::Result<Reloaded> {
         let config = Config::parse(text)?;
         let old = self.live();
@@ -99,6 +111,9 @@ impl App {
 
         let before = std::fs::read_to_string(&self.config_path).unwrap_or_default();
         if before != text {
+            if let Some(dir) = self.config_path.parent() {
+                std::fs::create_dir_all(dir)?;
+            }
             let tmp = self.config_path.with_extension("toml.tmp");
             std::fs::write(&tmp, text)?;
             std::fs::rename(&tmp, &self.config_path).with_context(|| format!("cannot write {}", self.config_path.display()))?;
@@ -133,17 +148,23 @@ struct Outcome {
     blocks: Vec<Block>,
     translations: Vec<String>,
     overlay: Option<RgbaImage>,
+    /// Why there is no translation (no engine chosen, the model loading), as
+    /// an overlay of its own.
+    notice: Option<(String, RgbaImage)>,
 }
 
 impl App {
-    async fn run(&self, frame: &DynamicImage, label: &str, lang: &str, ocr_only: bool) -> anyhow::Result<Outcome> {
+    /// `exact`: the overlay keeps the frame's shape (a whole screen), see
+    /// `Renderer::render_exact`. `serving`: the engine is woken up if it
+    /// sleeps, or a notice says why the screen can't be translated yet.
+    async fn run(&self, frame: &DynamicImage, label: &str, lang: &str, ocr_only: bool, exact: bool, serving: bool) -> anyhow::Result<Outcome> {
         let started = Instant::now();
         let live = self.live();
         let blocks = live.ocr.detect(&live.config.ocr, frame).await.context("OCR failed")?;
         let ocr_ms = started.elapsed().as_millis() as u64;
         if blocks.is_empty() || ocr_only {
             info!(ocr_ms, blocks = blocks.len(), "ocr done");
-            return Ok(Outcome { blocks, translations: Vec::new(), overlay: None });
+            return Ok(Outcome { blocks, translations: Vec::new(), overlay: None, notice: None });
         }
 
         let profile = live.config.profile_for(label);
@@ -157,6 +178,13 @@ impl App {
                 }
             })
             .collect();
+        if serving
+            && !self.translator.knows_all(label, lang, &texts)
+            && let Err(text) = self.engine.ready(&page_url(&live.config.listen)).await
+        {
+            let image = live.renderer.notice(frame.width(), frame.height(), exact, &text);
+            return Ok(Outcome { blocks, translations: Vec::new(), overlay: None, notice: Some((text, image)) });
+        }
         let (translations, cached) = self
             .translator
             .translate(&live.config.translate, &self.engine.backend(), profile, label, lang, &texts)
@@ -165,7 +193,7 @@ impl App {
         let translate_ms = started.elapsed().as_millis() as u64 - ocr_ms;
 
         let items: Vec<(&Block, &str)> = blocks.iter().zip(translations.iter().map(String::as_str)).collect();
-        let overlay = live.renderer.render(frame, &items);
+        let overlay = if exact { live.renderer.render_exact(frame, &items) } else { live.renderer.render(frame, &items) };
         let total_ms = started.elapsed().as_millis() as u64;
         info!(
             ocr_ms,
@@ -177,7 +205,7 @@ impl App {
             profile = profile.map(|p| p.pattern.as_str()),
             "pipeline done"
         );
-        Ok(Outcome { blocks, translations, overlay: Some(overlay) })
+        Ok(Outcome { blocks, translations, overlay: Some(overlay), notice: None })
     }
 }
 
@@ -198,20 +226,37 @@ async fn run() -> anyhow::Result<()> {
         .init();
 
     let mut args: Vec<String> = std::env::args().skip(1).collect();
-    let config_path = take_option(&mut args, "--config").unwrap_or_else(|| "config.toml".into());
-    let config = Config::load(Path::new(&config_path))?;
+    if args.first().is_some_and(|a| a == "--version") {
+        println!("fukidashi {}", env!("CARGO_PKG_VERSION"));
+        return Ok(());
+    }
+    if args.first().is_some_and(|a| matches!(a.as_str(), "--help" | "-h" | "help")) {
+        print!("{USAGE}");
+        return Ok(());
+    }
+    let config_arg = take_option(&mut args, "--config");
+    let config_path = config_arg.as_ref().map_or_else(|| config::config_dir().join("config.toml"), PathBuf::from);
+    let config = Config::load(&config_path)?;
+    // Commands that work beside the server, without loading the OCR.
+    match args.first().map(String::as_str) {
+        Some("open") => return commands::open(&page_url(&config.listen), config_arg.as_deref()).await,
+        Some("stop") => return commands::stop(&page_url(&config.listen)).await,
+        Some("setup") => return commands::setup(&page_url(&config.listen), &config, args.split_off(1)).await,
+        _ => {}
+    }
     // Only the server builds the games' persistent memory; replay and bench runs
     // must not mix test translations into it.
     let serving = matches!(args.first().map(String::as_str), None | Some("serve"));
     let data_dir = (serving && !config.data_dir.is_empty()).then(|| PathBuf::from(&config.data_dir));
     let client = reqwest::Client::new();
     let app = Arc::new(App {
-        config_path: PathBuf::from(&config_path),
+        config_path,
         started_with: (config.listen.clone(), config.data_dir.clone()),
         engine: Engine::new(client.clone(), &config.translate)?,
         translator: Translator::new(client.clone(), data_dir),
         client,
         last_frame: Mutex::new(None),
+        quit: Arc::new(tokio::sync::Notify::new()),
         live: RwLock::new(Arc::new(Live {
             renderer: Renderer::new(&config.render).context("cannot load font")?,
             ocr: Arc::new(Ocr::new(&config.ocr)?),
@@ -219,11 +264,11 @@ async fn run() -> anyhow::Result<()> {
         })),
     });
 
-    // The server starts in the background so that the page shows its progress
-    // (first downloads); replay and bench need it before going on.
+    // While serving, the local server starts with the first translation that
+    // needs it; replay and bench need it before going on.
     let translates = !args.iter().any(|a| a == "--ocr-only");
     if serving {
-        app.engine.start_in_background();
+        app.engine.stop_when_idle();
     } else if translates {
         app.engine.start().await;
         if let engine::Status::Failed(error) = app.engine.status() {
@@ -242,6 +287,29 @@ async fn run() -> anyhow::Result<()> {
     result
 }
 
+const USAGE: &str = "\
+Fukidashi: translates the Japanese text of games, on this machine.
+
+Usage: fukidashi [--config FILE] [COMMAND]
+
+Commands:
+  serve        Run the app (the default): RetroArch's AI Service and the GNOME
+               extension call it, its settings page is at http://localhost:4404/
+  open         Open the settings page, starting the app first if needed
+  stop         Stop the app
+  setup local  Use the local model, and download it now (~16 GB)
+  setup remote URL MODEL [--key KEY]
+               Use an OpenAI-compatible provider (the key can also come from
+               the FUKIDASHI_API_KEY environment variable)
+  replay [--lang CODE] [--label LABEL] [--ocr-only] [--out DIR] [--fixtures DIR] CAPTURE.png...
+               Run the pipeline on saved frames (development)
+  bench [--lang CODE] CASES.toml
+               Time the translation of test cases (development)
+
+Settings: the shipped ones, with yours over them from
+~/.config/fukidashi/config.toml (or --config FILE).
+";
+
 fn take_option(args: &mut Vec<String>, name: &str) -> Option<String> {
     let i = args.iter().position(|a| a == name)?;
     args.remove(i);
@@ -258,21 +326,55 @@ fn take_flag(args: &mut Vec<String>, name: &str) -> bool {
 
 async fn serve(app: Arc<App>) -> anyhow::Result<()> {
     let listen = app.live().config.listen.clone();
+    let quit = app.quit.clone();
     let router = Router::new()
         .route("/", get(web::page).post(handle_request))
         .merge(web::routes())
         .layer(DefaultBodyLimit::max(64 * 1024 * 1024))
-        .with_state(app);
-    let listener = tokio::net::TcpListener::bind(&listen).await?;
-    info!("listening on http://{listen}/ (open it in a browser for the settings)");
-    // Ctrl+C returns normally, so the translation server we started gets stopped.
+        .with_state(app.clone());
+    let listener = match tokio::net::TcpListener::bind(&listen).await {
+        Ok(listener) => listener,
+        Err(error) if error.kind() == std::io::ErrorKind::AddrInUse => {
+            let url = page_url(&listen);
+            if is_running(&app.client, &url).await {
+                bail!("Fukidashi already runs at {url} (as a service: systemctl --user status fukidashi)");
+            }
+            bail!("{listen} is used by another program: set another `listen` in {}", app.config_path.display());
+        }
+        Err(error) => return Err(error).with_context(|| format!("cannot listen on {listen}")),
+    };
+    info!("listening on {} (open it in a browser for the settings)", page_url(&listen));
+    // Returns normally on Ctrl+C, SIGTERM (systemctl stop) or `fukidashi stop`,
+    // so the translation server we started gets stopped.
     axum::serve(listener, router)
-        .with_graceful_shutdown(async {
-            let _ = tokio::signal::ctrl_c().await;
+        .with_graceful_shutdown(async move {
+            let mut term = tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate()).expect("signal handler");
+            tokio::select! {
+                _ = tokio::signal::ctrl_c() => {}
+                _ = term.recv() => {}
+                () = quit.notified() => {}
+            }
             info!("shutting down");
         })
         .await?;
     Ok(())
+}
+
+/// The settings page's address for `listen`: `localhost` for a local or
+/// any-address listen, as a browser on this machine reaches it.
+pub fn page_url(listen: &str) -> String {
+    let (host, port) = listen.rsplit_once(':').unwrap_or((listen, "4404"));
+    let host = if matches!(host, "127.0.0.1" | "0.0.0.0" | "[::]" | "[::1]" | "localhost") { "localhost" } else { host };
+    format!("http://{host}:{port}/")
+}
+
+/// Whether Fukidashi answers at `url` (its engine API, not just any server).
+pub async fn is_running(client: &reqwest::Client, url: &str) -> bool {
+    let response = client.get(format!("{url}api/engine")).timeout(std::time::Duration::from_secs(2)).send().await;
+    match response {
+        Ok(response) if response.status().is_success() => response.json::<Value>().await.is_ok_and(|v| v.get("provider").is_some()),
+        _ => false,
+    }
 }
 
 async fn handle_request(
@@ -294,6 +396,9 @@ async fn respond(app: &App, query: &HashMap<String, String>, body: &[u8]) -> any
     // RetroArch builds the body by hand: parse it ourselves rather than trust the Content-Type.
     let request: Value = serde_json::from_slice(body).context("invalid JSON")?;
     let label = request.get("label").and_then(Value::as_str).unwrap_or("unknown");
+    // Not sent by RetroArch: "frame" from the GNOME Shell extension, whose
+    // frame is a whole screen, so the overlay must keep its exact shape.
+    let exact = request.get("fit").and_then(Value::as_str) == Some("frame");
     let live = app.live();
     let lang = query.get("target_lang").map_or(live.config.default_target_lang.as_str(), String::as_str);
 
@@ -302,7 +407,7 @@ async fn respond(app: &App, query: &HashMap<String, String>, body: &[u8]) -> any
     let frame = image::load_from_memory(&png).context("invalid image")?;
     info!(label, lang, width = frame.width(), height = frame.height(), "request");
 
-    let key = format!("{label}|{lang}");
+    let key = format!("{label}|{lang}|{exact}");
     let thumb = thumbnail(&frame);
     if let Some(last) = app.last_frame.lock().unwrap().as_ref()
         && last.key == key && same_screen(&last.thumbnail, &thumb) {
@@ -311,7 +416,13 @@ async fn respond(app: &App, query: &HashMap<String, String>, body: &[u8]) -> any
         }
     save_capture(&live.config.capture_dir, label, &png);
 
-    let outcome = app.run(&frame, label, lang, false).await?;
+    let outcome = app.run(&frame, label, lang, false, exact, true).await?;
+    // RetroArch only logs an error: the notice shows as the overlay, and the
+    // GNOME extension shows the error.
+    if let Some((text, image)) = outcome.notice {
+        info!(notice = text, "screen not translated");
+        return Ok(json!({ "image": B64.encode(encode_png(&image)?), "error": text }));
+    }
     for (block, translation) in outcome.blocks.iter().zip(&outcome.translations) {
         info!(ja = block.joined(), tr = translation.as_str(), "block");
     }
@@ -377,7 +488,7 @@ async fn replay(app: Arc<App>, mut args: Vec<String>) -> anyhow::Result<()> {
         let frame = image::open(&path).with_context(|| format!("cannot open {}", path.display()))?;
         println!("== {} ({label})", path.display());
 
-        let outcome = app.run(&frame, &label, &lang, ocr_only).await?;
+        let outcome = app.run(&frame, &label, &lang, ocr_only, false, false).await?;
         for (i, block) in outcome.blocks.iter().enumerate() {
             println!("  [{i}] {}", block.joined());
             if let Some(translation) = outcome.translations.get(i) {

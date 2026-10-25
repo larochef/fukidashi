@@ -3,7 +3,7 @@
 
 use std::{
     collections::{BTreeMap, BTreeSet},
-    path::{Path, PathBuf},
+    path::Path,
     sync::Arc,
     time::UNIX_EPOCH,
 };
@@ -19,7 +19,7 @@ use serde_json::{Value, json};
 
 use crate::{
     App,
-    config::Profile,
+    config::{self, Profile},
     memory::{self, Entry, safe_name},
     settings::{self, Edit},
     web::ApiError,
@@ -96,10 +96,6 @@ fn profile_for<'a>(profiles: &'a [Profile], label: &str) -> Option<&'a Profile> 
     profiles.iter().find(|p| p.matches(label))
 }
 
-fn file_name(path: &Path) -> String {
-    path.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default()
-}
-
 /// Games by directory name: those with a memory, and those with captures
 /// (`<time>_<label>.png`), played before the memory existed or with it off.
 fn game_dirs(data_dir: Option<&Path>, capture_dir: &str) -> BTreeSet<String> {
@@ -143,7 +139,7 @@ async fn list(State(app): State<Arc<App>>) -> Json<Value> {
         let label = label(&app, &dir);
         let profile = profile_for(profiles, &label);
         if let Some(p) = profile {
-            with_games.push(p.file.clone());
+            with_games.push(p.name.clone());
         }
         let title = title(&label);
         games.push(json!({
@@ -154,13 +150,13 @@ async fn list(State(app): State<Arc<App>>) -> Json<Value> {
             "translations": entries.len(),
             "langs": langs,
             "names": memory::names(&path).len(),
-            "profile": profile.map(|p| file_name(&p.file)),
+            "profile": profile.map(|p| &p.name),
             "updated": updated,
         }));
     }
     // Profiles of games not played yet.
-    for profile in profiles.iter().filter(|p| !with_games.contains(&p.file)) {
-        let stem = profile.file.file_stem().map(|s| s.to_string_lossy().into_owned()).unwrap_or_default();
+    for profile in profiles.iter().filter(|p| !with_games.contains(&p.name)) {
+        let stem = profile.name.trim_end_matches(".toml");
         games.push(json!({
             "id": format!("{PROFILE_ID}{stem}"),
             "system": "",
@@ -168,7 +164,7 @@ async fn list(State(app): State<Arc<App>>) -> Json<Value> {
             "translations": 0,
             "langs": {},
             "names": 0,
-            "profile": file_name(&profile.file),
+            "profile": profile.name,
             "updated": 0,
         }));
     }
@@ -180,21 +176,20 @@ fn memory_dir(id: &str) -> Option<&str> {
     (!id.starts_with(PROFILE_ID)).then_some(id)
 }
 
-/// The profile file of a game, if it has one.
-fn profile_file(app: &App, id: &str) -> Option<PathBuf> {
+/// The profile of a game, if it has one.
+fn game_profile(app: &App, id: &str) -> Option<Profile> {
     let live = app.live();
     match id.strip_prefix(PROFILE_ID) {
-        Some(stem) => live.config.profiles.iter().find(|p| p.file.file_stem().is_some_and(|s| s == stem)).map(|p| p.file.clone()),
-        None => profile_for(&live.config.profiles, &label(app, id)).map(|p| p.file.clone()),
+        Some(stem) => live.config.profiles.iter().find(|p| p.name.trim_end_matches(".toml") == stem).cloned(),
+        None => profile_for(&live.config.profiles, &label(app, id)).cloned(),
     }
 }
 
 /// The profile as written in its file (without the styles merged in).
-fn read_profile(file: &Path) -> anyhow::Result<Value> {
-    let text = std::fs::read_to_string(file).with_context(|| format!("cannot read {}", file.display()))?;
-    let values = settings::to_json(&text)?;
+fn read_profile(name: &str, text: &str) -> anyhow::Result<Value> {
+    let values = settings::to_json(text)?;
     Ok(json!({
-        "file": file_name(file),
+        "file": name,
         "match": values.get("match").cloned().unwrap_or(Value::Null),
         "styles": values.get("styles").cloned().unwrap_or(json!([])),
         "instructions": values.get("instructions").cloned().unwrap_or(json!("")),
@@ -203,27 +198,13 @@ fn read_profile(file: &Path) -> anyhow::Result<Value> {
     }))
 }
 
-fn styles(app: &App) -> Vec<String> {
-    let live = app.live();
-    let mut names: Vec<String> = std::fs::read_dir(&live.config.styles_dir)
-        .into_iter()
-        .flatten()
-        .filter_map(Result::ok)
-        .map(|e| e.path())
-        .filter(|p| p.extension().is_some_and(|e| e == "toml"))
-        .filter_map(|p| p.file_stem().map(|s| s.to_string_lossy().into_owned()))
-        .collect();
-    names.sort();
-    names
-}
-
 async fn detail(State(app): State<Arc<App>>, UrlPath(id): UrlPath<String>) -> Result<Json<Value>, ApiError> {
     let title = match memory_dir(&id) {
         Some(dir) => title(&label(&app, dir)),
         None => Title { system: String::new(), name: id[PROFILE_ID.len()..].replace(['_', '-'], " "), region: None },
     };
     let names = memory_dir(&id).and_then(|dir| app.translator.game_dir(dir)).map(|path| memory::names(&path)).unwrap_or_default();
-    let profile = profile_file(&app, &id).map(|file| read_profile(&file)).transpose()?;
+    let profile = game_profile(&app, &id).map(|p| read_profile(&p.name, &p.text)).transpose()?;
     Ok(Json(json!({
         "id": id,
         "system": title.system,
@@ -232,7 +213,7 @@ async fn detail(State(app): State<Arc<App>>, UrlPath(id): UrlPath<String>) -> Re
         "memory": memory_dir(&id).is_some() && app.translator.data_dir().is_some(),
         "names": names,
         "profile": profile,
-        "styles": styles(&app),
+        "styles": config::style_names(),
     })))
 }
 
@@ -346,8 +327,9 @@ struct ProfileUpdate {
     ocr: BTreeMap<String, String>,
 }
 
-/// Writes the game's profile (a new file if it has none; comments kept
-/// otherwise) and applies it.
+/// Writes the game's profile into the user's profiles (a new file if it has
+/// none; comments kept otherwise; a shipped profile is copied there, edited)
+/// and applies it.
 async fn save_profile(
     State(app): State<Arc<App>>,
     UrlPath(id): UrlPath<String>,
@@ -384,13 +366,9 @@ async fn save_profile(
         Edit { key: "ocr".into(), value: if ocr.is_empty() { Value::Null } else { Value::Object(ocr) } },
     ];
 
-    let (file, text) = match profile_file(&app, &id) {
-        Some(file) => {
-            let text = std::fs::read_to_string(&file).map_err(anyhow::Error::from)?;
-            (file, text)
-        }
+    let (name, text) = match game_profile(&app, &id) {
+        Some(profile) => (profile.name, profile.text),
         None => {
-            let live = app.live();
             let stem: String = pattern
                 .to_lowercase()
                 .chars()
@@ -400,33 +378,32 @@ async fn save_profile(
                 .filter(|s| !s.is_empty())
                 .collect::<Vec<_>>()
                 .join("-");
-            let file = Path::new(&live.config.profiles_dir).join(format!("{stem}.toml"));
-            if file.exists() {
-                return Err(anyhow::anyhow!("{} already exists", file.display()).into());
+            let name = format!("{stem}.toml");
+            if app.live().config.profiles.iter().any(|p| p.name == name) {
+                return Err(anyhow::anyhow!("a profile {name} already exists").into());
             }
             let header = format!(
                 // A key to hold the comment, else it ends up below what is added.
                 "# Profile for {}: applied when RetroArch's label (`system__game name`)\n# contains `match`. See tokimeki-memorial-4.toml.\n\nmatch = \"\"\n",
                 memory_dir(&id).map_or(pattern.to_owned(), |dir| title(&label(&app, dir)).name)
             );
-            (file, header)
+            (name, header)
         }
     };
     let edited = settings::apply(&text, &edits)?;
     // Checked as a profile before it replaces the file.
     toml::from_str::<Profile>(&edited).context("invalid profile")?;
-    if let Some(parent) = file.parent() {
-        std::fs::create_dir_all(parent).map_err(anyhow::Error::from)?;
-    }
+    let dir = config::user_profiles_dir();
+    std::fs::create_dir_all(&dir).map_err(anyhow::Error::from)?;
+    let file = dir.join(&name);
     let tmp = file.with_extension("toml.tmp");
     std::fs::write(&tmp, &edited).map_err(anyhow::Error::from)?;
     std::fs::rename(&tmp, &file).map_err(anyhow::Error::from)?;
 
     // Profiles are read with the config.
-    let config_text = std::fs::read_to_string(&app.config_path).map_err(anyhow::Error::from)?;
-    app.reload(&config_text).await?;
+    app.reload(&config::user_text(&app.config_path)?).await?;
     tracing::info!(file = %file.display(), "profile saved");
-    Ok(Json(json!({ "profile": read_profile(&file)? })))
+    Ok(Json(json!({ "profile": read_profile(&name, &edited)? })))
 }
 
 #[cfg(test)]

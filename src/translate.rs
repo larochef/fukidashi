@@ -146,6 +146,14 @@ impl Translator {
         Some(result)
     }
 
+    /// Whether the game's memory has every text in `lang` already: then the
+    /// translation needs no model.
+    pub fn knows_all(&self, label: &str, lang: &str, texts: &[String]) -> bool {
+        let mut state = self.state.lock().unwrap();
+        let game = self.game(&mut state, label);
+        texts.iter().all(|text| game.get(lang, text).is_some())
+    }
+
     fn game<'a>(&self, state: &'a mut State, label: &str) -> &'a mut GameMemory {
         state
             .games

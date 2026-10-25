@@ -1,0 +1,8 @@
+{
+  "uuid": "fukidashi@larochef.github.io",
+  "name": "Fukidashi",
+  "description": "Translates the Japanese text on screen with Fukidashi, which must be running: the shortcut sends a capture of the screen to it and shows the translation over the screen; a key, a click or a gamepad button hides it.",
+  "shell-version": ["49", "50", "51"],
+  "settings-schema": "org.gnome.shell.extensions.fukidashi",
+  "url": "https://github.com/larochef/fukidashi"
+}

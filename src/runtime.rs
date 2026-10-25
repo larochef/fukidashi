@@ -3,7 +3,7 @@
 //! date: a newer build is installed in the background and used from the next
 //! start, the previous one staying as a fallback if the new one fails to start.
 //!
-//! Layout, under `~/.cache/game-translator/runtimes`:
+//! Layout, under `~/.cache/fukidashi/runtimes`:
 //!   <variant>-<tag>/   unpacked build (llama-server and its libraries)
 //!   state.json         current / previous / pending build of each variant
 //!   downloads/         archives in flight (deleted once unpacked)
@@ -355,7 +355,7 @@ async fn github<T: serde::de::DeserializeOwned>(client: &reqwest::Client, path: 
     let mut request = client
         .get(format!("https://api.github.com/repos/{path}"))
         .header("Accept", "application/vnd.github+json")
-        .header("User-Agent", "game-translator");
+        .header("User-Agent", "fukidashi");
     // Optional: lifts the limit of 60 requests an hour.
     if let Ok(token) = std::env::var("GITHUB_TOKEN") {
         request = request.bearer_auth(token);
@@ -428,7 +428,7 @@ async fn download(client: &reqwest::Client, asset: &Asset, file: &Path) -> anyho
     let part = file.with_file_name(format!("{}.part", asset.name));
     let mut response = client
         .get(&asset.browser_download_url)
-        .header("User-Agent", "game-translator")
+        .header("User-Agent", "fukidashi")
         .send()
         .await?
         .error_for_status()
@@ -444,6 +444,7 @@ async fn download(client: &reqwest::Client, asset: &Asset, file: &Path) -> anyho
         hasher.update(&chunk);
         out.write_all(&chunk).await?;
         done += chunk.len() as u64;
+        crate::server::set_phase(format!("downloading llama.cpp: {:.0} / {:.0} MB", mb(done), mb(total)));
         if logged.elapsed() >= PROGRESS_INTERVAL {
             logged = Instant::now();
             let speed = mb(done) / start.elapsed().as_secs_f64();

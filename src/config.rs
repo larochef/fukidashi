@@ -7,9 +7,19 @@ use anyhow::Context;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
+/// The settings as shipped (the repository's `config.toml`): the user's file
+/// only holds what differs from them.
+pub const DEFAULTS: &str = include_str!("../config.toml");
+
+/// The shipped profiles and styles, as `(file name, text)`.
+mod builtin {
+    include!(concat!(env!("OUT_DIR"), "/builtin.rs"));
+}
+
 #[derive(Debug, Deserialize)]
 pub struct Config {
     pub listen: String,
+    /// Frames received are saved here; empty: not saved.
     #[serde(default)]
     pub capture_dir: String,
     /// Per-game memory (past translations, learned names); empty to disable.
@@ -19,14 +29,9 @@ pub struct Config {
     pub ocr: OcrConfig,
     pub translate: TranslateConfig,
     pub render: RenderConfig,
-    /// Directory of per-game profiles, one TOML file each, relative to the
-    /// working directory.
-    #[serde(default = "default_profiles_dir")]
-    pub profiles_dir: String,
-    /// Directory of genre styles that profiles can reference.
-    #[serde(default = "default_styles_dir")]
-    pub styles_dir: String,
-    #[serde(default)]
+    /// The shipped profiles, and the user's (which replace a shipped one of the
+    /// same file name).
+    #[serde(skip)]
     pub profiles: Vec<Profile>,
 }
 
@@ -38,36 +43,48 @@ pub fn expand_home(path: &str) -> String {
     }
 }
 
-/// The app's cache: `$XDG_CACHE_HOME/game-translator`, by default
-/// `~/.cache/game-translator` (OCR models, server log).
+/// The app's cache: `$XDG_CACHE_HOME/fukidashi`, by default
+/// `~/.cache/fukidashi` (OCR models, server log).
 pub fn cache_dir() -> PathBuf {
     let base = std::env::var_os("XDG_CACHE_HOME")
         .map(PathBuf::from)
         .filter(|p| p.is_absolute())
         .unwrap_or_else(|| PathBuf::from(expand_home("~/.cache")));
-    base.join("game-translator")
+    base.join("fukidashi")
 }
 
-/// The app's per-machine settings: `$XDG_CONFIG_HOME/game-translator`, by
-/// default `~/.config/game-translator` (choices made in the web page, secrets).
+/// The user's settings: `$XDG_CONFIG_HOME/fukidashi`, by default
+/// `~/.config/fukidashi` (`config.toml`, `profiles/`, `styles/`, choices made
+/// in the web page, secrets).
 pub fn config_dir() -> PathBuf {
     let base = std::env::var_os("XDG_CONFIG_HOME")
         .map(PathBuf::from)
         .filter(|p| p.is_absolute())
         .unwrap_or_else(|| PathBuf::from(expand_home("~/.config")));
-    base.join("game-translator")
+    base.join("fukidashi")
+}
+
+/// The app's data: `$XDG_DATA_HOME/fukidashi`, by default
+/// `~/.local/share/fukidashi` (games' memory).
+pub fn data_home() -> PathBuf {
+    let base = std::env::var_os("XDG_DATA_HOME")
+        .map(PathBuf::from)
+        .filter(|p| p.is_absolute())
+        .unwrap_or_else(|| PathBuf::from(expand_home("~/.local/share")));
+    base.join("fukidashi")
+}
+
+/// The user's profiles, which add to the shipped ones or replace them.
+pub fn user_profiles_dir() -> PathBuf {
+    config_dir().join("profiles")
+}
+
+fn user_styles_dir() -> PathBuf {
+    config_dir().join("styles")
 }
 
 fn default_data_dir() -> String {
-    "data".into()
-}
-
-fn default_profiles_dir() -> String {
-    "profiles".into()
-}
-
-fn default_styles_dir() -> String {
-    "styles".into()
+    data_home().join("data").to_string_lossy().into_owned()
 }
 
 /// Settings shared by both OpenAI-compatible backends.
@@ -169,6 +186,14 @@ pub struct ServerConfig {
     /// Extra arguments used only with the draft model.
     #[serde(default)]
     pub draft_args: Vec<String>,
+    /// Minutes without a translation after which the server is stopped,
+    /// freeing the GPU memory; the next translation starts it again. 0: never.
+    #[serde(default = "default_idle_minutes")]
+    pub idle_minutes: u64,
+}
+
+fn default_idle_minutes() -> u64 {
+    30
 }
 
 /// What to do when a newer llama.cpp build is out.
@@ -247,7 +272,7 @@ fn default_outline() -> f32 {
     0.07
 }
 
-#[derive(Debug, Default, Deserialize)]
+#[derive(Debug, Default, Clone, Deserialize)]
 pub struct Profile {
     /// Substring matched against RetroArch's `system__game` label.
     #[serde(rename = "match")]
@@ -263,9 +288,12 @@ pub struct Profile {
     /// Misreadings of the game's font, fixed before translation ("ヒンン" = "ヒント").
     #[serde(default)]
     pub ocr: BTreeMap<String, String>,
-    /// The file it was read from.
+    /// Its file name (`kimikiss.toml`), shipped or in the user's profiles.
     #[serde(skip)]
-    pub file: PathBuf,
+    pub name: String,
+    /// The file as written (without its styles merged in), to edit it.
+    #[serde(skip)]
+    pub text: String,
 }
 
 impl Profile {
@@ -288,45 +316,43 @@ struct Style {
 }
 
 impl Config {
+    /// The shipped settings with the user's file (if any) over them.
     pub fn load(path: &Path) -> anyhow::Result<Self> {
-        let text = std::fs::read_to_string(path).with_context(|| format!("cannot read {}", path.display()))?;
+        let text = user_text(path)?;
         Self::parse(&text).with_context(|| format!("invalid config {}", path.display()))
     }
 
-    /// Reads a config file's text, with the profiles and styles it points to.
+    /// The shipped settings with `text` (the user's file) over them, and the
+    /// profiles and styles, shipped and the user's.
     pub fn parse(text: &str) -> anyhow::Result<Self> {
-        let mut config: Config = toml::from_str(text)?;
+        let mut config: Config = toml::Value::Table(merged(text)?).try_into()?;
         let ocr = &mut config.ocr;
         for path in [&mut ocr.detection, &mut ocr.recognition, &mut ocr.dictionary] {
             *path = expand_home(path);
         }
+        for path in [&mut config.data_dir, &mut config.capture_dir] {
+            *path = expand_home(path);
+        }
+        // An emptied optional setting is the same as none.
+        let none_if_empty = |value: &mut Option<String>| *value = value.take().filter(|v| !v.trim().is_empty());
+        none_if_empty(&mut config.render.font);
         config.render.font = config.render.font.as_deref().map(expand_home);
-
-        let dir = Path::new(&config.profiles_dir);
-        if dir.is_dir() {
-            let mut files: Vec<_> = std::fs::read_dir(dir)?
-                .filter_map(Result::ok)
-                .map(|e| e.path())
-                .filter(|p| p.extension().is_some_and(|e| e == "toml"))
-                .collect();
-            files.sort();
-            for file in files {
-                let text = std::fs::read_to_string(&file)?;
-                let mut profile: Profile = toml::from_str(&text).with_context(|| format!("invalid profile {}", file.display()))?;
-                profile.file = file;
-                config.profiles.push(profile);
-            }
+        if let Some(server) = &mut config.translate.server {
+            none_if_empty(&mut server.command);
+            none_if_empty(&mut server.draft);
         }
 
-        // Resolve styles once, at load: the game's own instructions and glossary
-        // entries come last so they take precedence.
-        for profile in &mut config.profiles {
+        let styles = files(builtin::STYLES, &user_styles_dir())?;
+        for (name, text) in files(builtin::PROFILES, &user_profiles_dir())? {
+            let mut profile: Profile = toml::from_str(&text).with_context(|| format!("invalid profile {name}"))?;
+            // The game's own instructions and glossary entries come after its
+            // styles', so they take precedence.
             let mut instructions = String::new();
             let mut glossary = BTreeMap::new();
-            for name in &profile.styles {
-                let file = Path::new(&config.styles_dir).join(format!("{name}.toml"));
-                let text = std::fs::read_to_string(&file).with_context(|| format!("cannot read style {}", file.display()))?;
-                let style: Style = toml::from_str(&text).with_context(|| format!("invalid style {}", file.display()))?;
+            for style_name in &profile.styles {
+                let file = format!("{style_name}.toml");
+                let style_text = styles.get(&file).with_context(|| format!("profile {name}: no style {style_name}"))?;
+                let style: Style = toml::from_str(style_text).with_context(|| format!("invalid style {file}"))?;
                 instructions.push_str(style.instructions.trim_end());
                 instructions.push('\n');
                 glossary.extend(style.glossary);
@@ -335,11 +361,97 @@ impl Config {
             glossary.append(&mut profile.glossary);
             profile.instructions = instructions;
             profile.glossary = glossary;
+            profile.name = name;
+            profile.text = text;
+            config.profiles.push(profile);
         }
         Ok(config)
     }
 
     pub fn profile_for(&self, label: &str) -> Option<&Profile> {
         self.profiles.iter().find(|p| p.matches(label))
+    }
+}
+
+/// The user's settings file, empty when there is none yet.
+pub fn user_text(path: &Path) -> anyhow::Result<String> {
+    match std::fs::read_to_string(path) {
+        Ok(text) => Ok(text),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(String::new()),
+        Err(error) => Err(error).with_context(|| format!("cannot read {}", path.display())),
+    }
+}
+
+/// The shipped settings with `text` over them: tables merge key by key, any
+/// other value replaces the shipped one.
+pub fn merged(text: &str) -> anyhow::Result<toml::Table> {
+    fn merge(base: &mut toml::Table, top: toml::Table) {
+        for (key, value) in top {
+            match (base.get_mut(&key), value) {
+                (Some(toml::Value::Table(base)), toml::Value::Table(top)) => merge(base, top),
+                (_, value) => {
+                    base.insert(key, value);
+                }
+            }
+        }
+    }
+    let mut table: toml::Table = toml::from_str(DEFAULTS).context("invalid shipped config.toml")?;
+    merge(&mut table, toml::from_str(text)?);
+    Ok(table)
+}
+
+/// The shipped files and the user's `*.toml` in `dir`, by file name: a user
+/// file replaces the shipped one of the same name.
+fn files(shipped: &[(&str, &str)], dir: &Path) -> anyhow::Result<BTreeMap<String, String>> {
+    let mut files: BTreeMap<String, String> = shipped.iter().map(|(name, text)| ((*name).to_owned(), (*text).to_owned())).collect();
+    for entry in std::fs::read_dir(dir).into_iter().flatten().filter_map(Result::ok) {
+        let path = entry.path();
+        if path.extension().is_some_and(|e| e == "toml") {
+            let text = std::fs::read_to_string(&path).with_context(|| format!("cannot read {}", path.display()))?;
+            files.insert(entry.file_name().to_string_lossy().into_owned(), text);
+        }
+    }
+    Ok(files)
+}
+
+/// The styles profiles can use, shipped and the user's.
+pub fn style_names() -> Vec<String> {
+    files(builtin::STYLES, &user_styles_dir())
+        .unwrap_or_default()
+        .into_keys()
+        .filter_map(|name| name.strip_suffix(".toml").map(str::to_owned))
+        .collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{Config, merged};
+
+    #[test]
+    fn user_settings_override_the_shipped_ones() {
+        let table = merged("default_target_lang = \"fr\"\n[render]\nwidth = 1280\n").unwrap();
+        assert_eq!(table["default_target_lang"].as_str(), Some("fr"));
+        assert_eq!(table["render"]["width"].as_integer(), Some(1280));
+        // The rest of the table is still the shipped one.
+        assert!(table["render"].get("background").is_some());
+        assert!(table["translate"]["system_prompt"].as_str().is_some_and(|p| !p.is_empty()));
+    }
+
+    #[test]
+    fn shipped_settings_and_profiles_load() {
+        let config = Config::parse("").unwrap();
+        assert!(config.capture_dir.is_empty(), "captures are off by default");
+        assert!(config.data_dir.ends_with("fukidashi/data"), "{}", config.data_dir);
+        assert!(config.profiles.iter().any(|p| p.name == "kimikiss.toml" && !p.text.is_empty()));
+        // Styles are merged into the profiles that use them.
+        let kimikiss = config.profile_for("playstation2__KimiKiss (Japan)").unwrap();
+        assert!(kimikiss.instructions.len() > kimikiss.text.len() / 4);
+    }
+
+    #[test]
+    fn emptied_optional_settings_are_none() {
+        let config = Config::parse("[translate.server]\ndraft = \"\"\n[render]\nfont = \"\"\n").unwrap();
+        assert_eq!(config.translate.server.unwrap().draft, None);
+        assert_eq!(config.render.font, None);
     }
 }

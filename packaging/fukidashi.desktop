@@ -1,0 +1,16 @@
+[Desktop Entry]
+Type=Application
+Name=Fukidashi
+GenericName=Game Translator
+Comment=Translate the Japanese text of games, on this computer
+Exec=fukidashi open
+Icon=fukidashi
+Terminal=false
+Categories=Game;
+Keywords=translation;translate;japanese;retroarch;ocr;overlay;
+StartupNotify=false
+Actions=stop;
+
+[Desktop Action stop]
+Name=Stop Fukidashi
+Exec=fukidashi stop

@@ -135,6 +135,44 @@ impl Renderer {
         img
     }
 
+    /// The overlay at the frame's own shape, for a frame that is a whole screen
+    /// (from the GNOME Shell extension) rather than a game shown at 4:3 or 16:9.
+    pub fn render_exact(&self, frame: &DynamicImage, items: &[(&Block, &str)]) -> RgbaImage {
+        let height = ((self.width as f32 * frame.height() as f32 / frame.width() as f32).round() as u32).max(1);
+        self.render_game(frame, items, self.width, height)
+    }
+
+    /// A message from the app (no engine chosen yet, the model loading)
+    /// shown as the overlay, in a panel at the top (games mostly write at the
+    /// bottom): RetroArch only logs a
+    /// response's error. Sized as `render` or `render_exact` would be.
+    pub fn notice(&self, frame_width: u32, frame_height: u32, exact: bool, text: &str) -> RgbaImage {
+        let (ow, oh) = if exact {
+            (self.width, ((self.width as f32 * frame_height as f32 / frame_width.max(1) as f32).round() as u32).max(1))
+        } else {
+            let layout = self.layout(frame_width, frame_height);
+            (layout.width, layout.height)
+        };
+        let mut img = RgbaImage::from_pixel(ow, oh, Rgba([0, 0, 0, 0]));
+        let (owf, ohf) = (ow as f32, oh as f32);
+        let size = (ohf / 24.0).max(12.0);
+        let pad = size * 0.7;
+        let lines = self.wrap(text, size, owf * 0.8 - 2.0 * pad);
+        let width = lines.iter().map(|l| self.text_width(l, size)).fold(0.0, f32::max) + 2.0 * pad;
+        let height = lines.len() as f32 * size * LINE_SPACING + 2.0 * pad;
+        let (x, y) = ((owf - width) / 2.0, ohf / 12.0);
+        let mut backdrop = self.background;
+        backdrop.0[3] = backdrop.0[3].max(230);
+        let colors = Colors { backdrop, text: self.text_color, outline: Rgba([backdrop.0[0], backdrop.0[1], backdrop.0[2], 255]) };
+        fill_rounded(&mut img, x, y, width, height, pad, colors.backdrop);
+        let ascent = self.fonts[0].as_scaled(PxScale::from(size)).ascent();
+        for (i, line) in lines.iter().enumerate() {
+            let baseline = y + pad + ascent + i as f32 * size * LINE_SPACING;
+            self.draw_line(&mut img, line, x + (width - self.text_width(line, size)) / 2.0, baseline, size, &colors);
+        }
+        img
+    }
+
     /// The overlay of the game area alone.
     fn render_game(&self, frame: &DynamicImage, items: &[(&Block, &str)], ow: u32, oh: u32) -> RgbaImage {
         let mut img = RgbaImage::from_pixel(ow, oh, Rgba([0, 0, 0, 0]));

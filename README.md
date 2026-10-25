@@ -1,6 +1,10 @@
-# game-translator
+<img src="assets/icons/fukidashi.svg" alt="" width="96" align="right">
+
+# Fukidashi
 
 Translate Japanese games while you play, entirely on your own machine.
+Fukidashi (吹き出し) is the speech bubble of manga: it puts the translation in
+place of the original text.
 
 Press a hotkey in RetroArch: the game pauses, the screen is read (OCR), the
 Japanese text is translated by a local LLM, and the translation is drawn over
@@ -18,17 +22,17 @@ RetroArch core, in fullscreen, without screen capture or overlay windows.
 
 ## Requirements
 
-- **Rust** (stable): <https://rustup.rs>, unless you use a release archive
-- **Linux x86-64**, glibc 2.38 or newer (Ubuntu 24.04, Debian 13, Fedora 39 or later), with a GPU driver: Mesa (AMD, Intel) or the NVIDIA driver (570 or
+- **Linux x86-64**, glibc 2.39 or newer (Ubuntu 24.04, Debian 13, Fedora 40 or later), with a GPU driver: Mesa (AMD, Intel) or the NVIDIA driver (570 or
   newer for CUDA). Other systems: bring your own `llama-server` (see Configuration).
 - **RetroArch** (a recent version, with the AI Service and the Vulkan or GL video driver).
 - **Memory**: the default translation model (Gemma 4 26B-A4B, 4-bit) needs about
   20 GB of GPU or unified memory, on top of the game. OCR runs on the CPU.
 
-Everything else is downloaded on first start: the OCR models (~90 MB) and a
-prebuilt llama.cpp fitting the GPU (into `~/.cache/game-translator`), and the
-translation model (~16 GB, into the Hugging Face cache, `~/.cache/huggingface`,
-shared with other tools).
+The OCR models (~90 MB) are downloaded on first start. The local translation
+model is only downloaded once you choose it (see First start): a prebuilt
+llama.cpp fitting the GPU (into `~/.cache/fukidashi`) and the model (~16 GB,
+into the Hugging Face cache, `~/.cache/huggingface`, shared with other tools).
+A remote provider needs neither.
 
 | GPU | llama.cpp build (`runtime = "auto"`) |
 |---|---|
@@ -41,20 +45,54 @@ The build is kept up to date: at start (at most once a day) a newer release is
 installed in the background and used from the next start, the previous one
 staying as a fallback if the new one fails to start.
 
-## Quick start
+## Install
+
+Each [release](https://github.com/larochef/fukidashi/releases) has:
+
+- `fukidashi_<version>_amd64.deb` (Debian, Ubuntu) and
+  `fukidashi-<version>.x86_64.rpm` (Fedora, openSUSE): the app, a menu entry,
+  a user service, and the GNOME extension;
+- on Arch, the AUR package `fukidashi-bin` installs the same;
+- `fukidashi-<version>-x86_64-linux.tar.gz`: the same files, to run
+  `./fukidashi` from anywhere (its `fukidashi.service` expects
+  `/usr/bin/fukidashi`).
+
+From the sources, with [Rust](https://rustup.rs):
 
 ```sh
-git clone <this repository> && cd game-translator
+git clone https://github.com/larochef/fukidashi.git && cd fukidashi
 cargo run --release
 ```
 
-Or, without Rust, download the Linux archive of a
-[release](https://github.com/larochef/game-translator/releases), extract it and
-run `./game-translator` from its folder (it reads `config.toml`, `profiles/` and
-`styles/` from the current directory, and keeps game memory in `data/` there).
+## First start
 
-The app starts `llama-server` with the translation model, then listens on
-`http://localhost:4404/`. Stop it with Ctrl+C (it stops `llama-server` too).
+Open **Fukidashi** from the applications menu (or run `fukidashi open`): the
+app starts and its page opens at <http://localhost:4404/>, on Getting started.
+Choose where the text is translated:
+
+- **On this computer**: the page shows the GPU found and the model's size,
+  and downloads it when you choose it, with its progress;
+- **With a provider**: any OpenAI-compatible endpoint, nothing to download.
+
+The same page offers to start Fukidashi when you log in, and, on GNOME, to
+enable the extension. In a terminal: `fukidashi setup local`, or
+`fukidashi setup remote URL MODEL --key KEY`.
+
+## Running
+
+| | |
+|---|---|
+| Start, and open the page | the menu entry, or `fukidashi open` |
+| Stop | the menu entry's Stop action, or `fukidashi stop` |
+| With the session | the option on the page (`systemctl --user enable fukidashi`) |
+| In a terminal | `fukidashi` (Ctrl+C stops it), or `cargo run --release` |
+
+The app listens on `http://localhost:4404/` (`listen`); a second one says the
+first already runs. The local model loads with the first translation that
+needs it (a few seconds) and is unloaded after 30 minutes without one
+(`idle_minutes`), freeing the GPU memory; the app itself stays, small. Until
+the model is ready (no engine chosen, still downloading), a translation shows a
+message saying so instead.
 
 ### RetroArch setup
 
@@ -72,11 +110,42 @@ In the **AI Service** settings (under Settings, or Settings → Accessibility de
 Then bind a key in **Settings → Input → Hotkeys → AI Service**. The video
 driver must be `gl`, `glcore` or `vulkan` for the transparent overlay.
 
+### Any game, outside RetroArch (GNOME)
+
+On GNOME, an extension translates whatever is on screen: a PC game, a standalone
+emulator, a video. Press **Super+T**: the monitor of the focused window is
+captured and sent to the app (which must be running), and the translation is
+shown over it. The packages install it: enable it from the page (or
+`gnome-extensions enable fukidashi@larochef.github.io`), then log out and back
+in. Any key, a click or a gamepad button hides it (gamepads need
+libmanette, installed with WebKitGTK on most systems; the button also reaches
+the game). The game is not paused, and the window's class (`steam_app_1234`,
+`pcsx2-qt`…) stands for the game label, for its memory and profile.
+
+Without a package, install it from a release (`fukidashi@larochef.github.io.zip`),
+then log out and back in (GNOME on Wayland loads extensions at login):
+
+```sh
+gnome-extensions install --force fukidashi@larochef.github.io.zip
+gnome-extensions enable fukidashi@larochef.github.io
+```
+
+Or from a clone: `glib-compile-schemas gnome-extension/schemas`, then link
+`gnome-extension` as `~/.local/share/gnome-shell/extensions/fukidashi@larochef.github.io`.
+
+The shortcut, the language to translate into (by default the system's) and the
+app's address are in the extension's preferences: `gnome-extensions prefs
+fukidashi@larochef.github.io`. The extension lists the GNOME versions it
+was checked with (`shell-version` in `metadata.json`); a newer GNOME refuses it
+until its version is added there.
+
 ## Settings page
 
 <http://localhost:4404/>, opened in a browser, shows the translation engine and lets you switch it
 while the app runs:
 
+- **Getting started**: the engine to use (shown first until one is chosen),
+  starting with the session, the GNOME extension.
 - **Local model**: the GPU found, the llama.cpp build in use and the ones kept,
   update settings, a button to look for a newer build, the server log.
 - **Remote provider**: any OpenAI-compatible endpoint (OpenRouter, a server on
@@ -95,17 +164,22 @@ while the app runs:
   or delete it (translated again next time); the names it learned; its profile
   (instructions, styles, glossary, OCR fixes), created here when it has none.
 
-Choices made in the page are saved in `~/.config/game-translator/engine.toml`
+Choices made in the page are saved in `~/.config/fukidashi/engine.toml`
 and override `config.toml`; the API key goes to `secrets.toml` next to it,
-readable by you only (the `GAME_TRANSLATOR_API_KEY` environment variable takes
+readable by you only (the `FUKIDASHI_API_KEY` environment variable takes
 precedence and is never written).
 
 ## Configuration
 
-`config.toml` holds everything: OCR, translation model and prompt, layout.
+The settings ship with the app (the repository's `config.toml`: OCR,
+translation model and prompt, layout). Yours go in
+`~/.config/fukidashi/config.toml`, which the settings page writes: it holds
+only what differs from the shipped settings, so improvements to the shipped
+ones (the prompt above all) still reach you. `--config FILE` uses another file
+of your settings instead.
 
 - **Another model or server**: edit `[translate]` (any OpenAI-compatible
-  endpoint works). Remove `[translate.server]` if you run the server yourself.
+  endpoint works). A server of your own answering on `url` is used as is.
 - **llama.cpp build**: `[translate.server]` sets the kind of build (`runtime`),
   pins a release (`release = "b11856"`) or turns updates off or to a log line
   (`update`). To run your own build: `command = "/path/to/llama-server"`, or
@@ -113,7 +187,10 @@ precedence and is never written).
 
 ### Game profiles and styles
 
-A profile in `profiles/` applies when RetroArch's game label contains `match`.
+A profile applies when the game's label (RetroArch's, or the window's for the
+GNOME extension) contains `match`. Profiles ship in the repository's
+`profiles/`; yours, written by the Games page, go in
+`~/.config/fukidashi/profiles/` and replace a shipped one of the same file name.
 It adds instructions and a glossary, which is the reliable way to fix the
 reading of character names:
 
@@ -126,13 +203,14 @@ instructions = "Game: Tokimeki Memorial 4 (PSP, 2009)."
 "大倉都子" = "Ōkura Miyako"
 ```
 
-Styles in `styles/` hold what a whole genre shares (tone, honorifics, common
-terms); a profile lists the styles it uses.
+Styles hold what a whole genre shares (tone, honorifics, common terms); a
+profile lists the styles it uses. They ship in `styles/`; yours go in
+`~/.config/fukidashi/styles/`.
 
 ### Game memory
 
 While serving, every translated block and every name the model transcribed is
-saved in `data/<game>/`:
+saved in `~/.local/share/fukidashi/data/<game>/` (`data_dir`):
 
 - `memory.jsonl`: past translations, reused instantly (also across sessions);
 - `glossary.toml`: names learned along the way. Fix a wrong reading here once
@@ -140,10 +218,15 @@ saved in `data/<game>/`:
 
 ## Development
 
-- `cargo run --release -- replay captures/<frame>.png`: run the whole pipeline
-  on a saved frame (RetroArch frames are saved in `captures/` while serving) and
-  write the overlay and a preview in `replay/`. Add `--ocr-only` to see the
-  detected text boxes.
+- The repository's `config.toml`, `profiles/` and `styles/` are the shipped
+  settings, embedded at build time: a change there needs a rebuild
+  (`cargo run` does it), and your own settings in `~/.config/fukidashi` still
+  apply over them.
+- `cargo run --release -- replay <frame>.png`: run the whole pipeline on a
+  saved frame (frames received are saved while serving when `capture_dir` is
+  set, e.g. `capture_dir = "~/.local/share/fukidashi/captures"` in your
+  settings) and write the overlay and a preview in `replay/`. Add `--ocr-only`
+  to see the detected text boxes.
 - `cargo run --release -- bench <cases.toml>`: translate a list of test cases
   and time them, to compare models.
 - `cargo test`: also checks the overlay layout against reviewed cases in
@@ -151,9 +234,12 @@ saved in `data/<game>/`:
   the expected panels). `replay --fixtures tests/layout captures/<frame>.png`
   adds a case; after a deliberate layout change, check the result, then accept
   it with `UPDATE_LAYOUT=1 cargo test layout`.
+- `packaging/`: the user service, the menu entry, and a starting point for the
+  AUR package; `Cargo.toml` lists what the `.deb` (`cargo deb`) and the `.rpm`
+  (`cargo generate-rpm`) install.
 - CI (`.github/workflows/ci.yml`): every push and pull request runs clippy and
   the tests. Every push to `main` that passes them is published as a release with
-  the Linux archive, numbered like llama.cpp's builds: `v<major.minor of
+  the packages and the Linux archive, numbered like llama.cpp's builds: `v<major.minor of
   Cargo.toml>.<number of commits>` (e.g. `v0.1.42`). Raise the version in
   `Cargo.toml` to mark a bigger step.
 
@@ -166,8 +252,9 @@ saved in `data/<game>/`:
 - Fonts: [Noto Sans](https://github.com/notofonts/latin-greek-cyrillic) (`assets/fonts/OFL.txt`)
   and [Noto Sans JP](https://github.com/notofonts/noto-cjk) for symbols and Japanese
   (`assets/fonts/OFL-NotoSansJP.txt`), SIL Open Font License 1.1, embedded in the binary.
+  The icon's letters are outlines of these fonts.
 
 ## License
 
-Apache License 2.0, see [LICENSE](LICENSE). The bundled Noto Sans and Noto Sans JP
+MIT License, see [LICENSE](LICENSE). The bundled Noto Sans and Noto Sans JP
 fonts keep their own license (SIL Open Font License 1.1).

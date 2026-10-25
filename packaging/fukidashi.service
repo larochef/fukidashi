@@ -1,0 +1,14 @@
+# Fukidashi as a user service: `systemctl --user enable --now fukidashi` starts
+# it with the session (the settings page has a checkbox for that). The
+# translation model only loads with the first translation.
+[Unit]
+Description=Fukidashi, translates the Japanese text of games
+Documentation=https://github.com/larochef/fukidashi
+
+[Service]
+ExecStart=/usr/bin/fukidashi serve
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=default.target

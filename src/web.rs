@@ -21,19 +21,22 @@ use serde_json::{Value, json};
 
 use crate::{
     App,
-    config::{Provider, RemoteConfig},
+    config::{self, Provider, RemoteConfig},
     engine::{self, Settings},
     runtime, server,
     settings::{self, Edit},
+    system,
     translate::Translator,
 };
 
 const PAGE: &str = include_str!("../assets/ui/index.html");
+const FAVICON: &str = include_str!("../assets/icons/fukidashi.svg");
 /// Lines of the app's log kept for the page.
 const LOG_LINES: usize = 500;
 
 pub fn routes() -> Router<Arc<App>> {
     Router::new()
+        .route("/favicon.svg", get(favicon))
         .route("/api/engine", get(engine_state).put(update_engine))
         .route("/api/engine/test", post(test_engine))
         .route("/api/engine/restart", post(restart_engine))
@@ -42,12 +45,19 @@ pub fn routes() -> Router<Arc<App>> {
         .route("/api/config", get(config_state).put(update_config))
         .route("/api/config/raw", axum::routing::put(update_raw_config))
         .route("/api/config/reload", post(reload_config))
+        .route("/api/quit", post(quit))
+        .route("/api/system", get(system_state).put(update_system))
         .merge(crate::games::routes())
 }
 
 /// The settings page; RetroArch only ever posts to `/`.
 pub async fn page() -> Html<&'static str> {
     Html(PAGE)
+}
+
+/// The app's icon, as the page's favicon.
+async fn favicon() -> ([(header::HeaderName, &'static str); 1], &'static str) {
+    ([(header::CONTENT_TYPE, "image/svg+xml")], FAVICON)
 }
 
 /// An error as `{ "error": ... }`, with a status code the page can show.
@@ -75,11 +85,14 @@ async fn engine_state(State(app): State<Arc<App>>) -> Json<Value> {
         .map(|p| format!("{p} (LLAMA_SERVER)"))
         .ok()
         .or_else(|| server.as_ref().and_then(|s| s.command.clone()));
-    let model = server
-        .as_ref()
-        .map(|s| variant.as_ref().and_then(|v| s.models.get(v.family())).unwrap_or(&s.model).clone());
+    let model = server.as_ref().map(|s| server::model_spec(s, variant.as_ref()).to_owned());
+    let model_size = match &model {
+        Some(spec) => server::file_size(&app.client, spec).await,
+        None => None,
+    };
     Json(json!({
         "provider": settings.provider,
+        "configured": app.engine.configured(),
         "status": app.engine.status(),
         "restart_needed": app.engine.needs_restart(),
         "local": {
@@ -89,6 +102,8 @@ async fn engine_state(State(app): State<Arc<App>>) -> Json<Value> {
             "update": settings.local.update,
             "program": program,
             "model": model,
+            "model_size": model_size,
+            "model_cached": model.as_deref().is_some_and(server::is_cached),
             "gpus": runtime::Gpus::detect(),
             "variant": variant.as_ref().map(runtime::Variant::name),
             "builds": variant.as_ref().map(runtime::slot),
@@ -165,12 +180,15 @@ async fn check_update(State(app): State<Arc<App>>) -> Result<Json<Value>, ApiErr
     Ok(Json(json!({ "started": true })))
 }
 
+/// The settings in use (shipped ones with the user's over them), the user's
+/// file, and the shipped settings for reference.
 async fn config_state(State(app): State<Arc<App>>) -> Result<Json<Value>, ApiError> {
-    let text = std::fs::read_to_string(&app.config_path).map_err(anyhow::Error::from)?;
+    let text = config::user_text(&app.config_path)?;
     Ok(Json(json!({
-        "path": std::fs::canonicalize(&app.config_path).unwrap_or(app.config_path.clone()),
-        "values": settings::to_json(&text)?,
+        "path": app.config_path,
+        "values": serde_json::to_value(config::merged(&text)?).map_err(anyhow::Error::from)?,
         "text": text,
+        "defaults": config::DEFAULTS,
     })))
 }
 
@@ -179,10 +197,22 @@ struct ConfigEdits {
     edits: Vec<Edit>,
 }
 
-/// Changes some settings in config.toml (comments kept) and applies them.
+/// Changes some settings in the user's file (comments kept) and applies them.
+/// A setting set back to its shipped value leaves the file, which keeps only
+/// what differs.
 async fn update_config(State(app): State<Arc<App>>, Json(body): Json<ConfigEdits>) -> Result<Json<Value>, ApiError> {
-    let text = std::fs::read_to_string(&app.config_path).map_err(anyhow::Error::from)?;
-    let edited = settings::apply(&text, &body.edits)?;
+    let text = config::user_text(&app.config_path)?;
+    let shipped = serde_json::to_value(config::merged("")?).map_err(anyhow::Error::from)?;
+    let edits: Vec<Edit> = body
+        .edits
+        .into_iter()
+        .map(|edit| {
+            let default = edit.key.split('.').try_fold(&shipped, |value, part| value.get(part));
+            let unset = default.is_none() && edit.value.as_str() == Some("");
+            if default == Some(&edit.value) || unset { Edit { value: Value::Null, ..edit } } else { edit }
+        })
+        .collect();
+    let edited = settings::apply(&text, &edits)?;
     let reloaded = app.reload(&edited).await?;
     let mut state = config_state(State(app)).await?.0;
     state["reloaded"] = json!(reloaded);
@@ -194,7 +224,7 @@ struct RawConfig {
     text: String,
 }
 
-/// Replaces config.toml as a whole, once it is known to be valid.
+/// Replaces the user's settings file as a whole, once it is known to be valid.
 async fn update_raw_config(State(app): State<Arc<App>>, Json(body): Json<RawConfig>) -> Result<Json<Value>, ApiError> {
     let reloaded = app.reload(&body.text).await?;
     let mut state = config_state(State(app)).await?.0;
@@ -202,14 +232,30 @@ async fn update_raw_config(State(app): State<Arc<App>>, Json(body): Json<RawConf
     Ok(Json(state))
 }
 
-/// Applies config.toml as it is on disk (after editing it by hand), with the
-/// profiles and styles.
+/// Applies the user's settings as they are on disk (after editing them by
+/// hand), with the profiles and styles.
 async fn reload_config(State(app): State<Arc<App>>) -> Result<Json<Value>, ApiError> {
-    let text = std::fs::read_to_string(&app.config_path).map_err(anyhow::Error::from)?;
+    let text = config::user_text(&app.config_path)?;
     let reloaded = app.reload(&text).await?;
     let mut state = config_state(State(app)).await?.0;
     state["reloaded"] = json!(reloaded);
     Ok(Json(state))
+}
+
+/// Starting with the session, the GNOME extension.
+async fn system_state() -> Json<Value> {
+    Json(system::state().await)
+}
+
+async fn update_system(Json(change): Json<system::Change>) -> Result<Json<Value>, ApiError> {
+    system::apply(change).await?;
+    Ok(Json(system::state().await))
+}
+
+/// Stops the app (`fukidashi stop`, the menu entry's Stop action).
+async fn quit(State(app): State<Arc<App>>) -> Json<Value> {
+    app.quit.notify_one();
+    Json(json!({ "stopping": true }))
 }
 
 /// The end of the app's log, or of the local server's (`?source=server`).

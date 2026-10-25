@@ -4,12 +4,21 @@
 //! provider takes over (freeing the GPU memory) and started again on return.
 //!
 //! Choices made in the page are saved per machine, apart from the versioned
-//! `config.toml`: `~/.config/game-translator/engine.toml`, and the API key in
-//! `secrets.toml` next to it (readable by the user only).
+//! `config.toml`: `~/.config/fukidashi/engine.toml`, and the API key in
+//! `secrets.toml` next to it (readable by the user only). Until a choice is
+//! saved, nothing is downloaded: the model is ~16 GB, and a remote provider
+//! needs none.
+//!
+//! The local server starts with the first translation that needs it, and
+//! stops after `idle_minutes` without one, freeing the GPU memory.
 
 use std::{
     path::PathBuf,
-    sync::{Arc, RwLock},
+    sync::{
+        Arc, RwLock,
+        atomic::{AtomicBool, Ordering},
+    },
+    time::{Duration, Instant},
 };
 
 use anyhow::{Context, bail};
@@ -24,7 +33,7 @@ use crate::{
 
 /// Environment variable holding the remote provider's API key; it takes
 /// precedence over the key saved from the page.
-pub const API_KEY_ENV: &str = "GAME_TRANSLATOR_API_KEY";
+pub const API_KEY_ENV: &str = "FUKIDASHI_API_KEY";
 
 /// What the page can change.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -43,12 +52,18 @@ pub struct LocalSettings {
 }
 
 #[derive(Debug, Clone, Serialize)]
-#[serde(rename_all = "lowercase", tag = "state", content = "detail")]
+#[serde(rename_all = "snake_case", tag = "state", content = "detail")]
 pub enum Status {
+    /// No engine chosen yet in the page (or with `fukidashi setup`).
+    NotConfigured,
     /// No local server (none configured, or a remote provider in use).
     Stopped,
-    /// Downloading the build or the model, or loading the model.
-    Starting,
+    /// Not running, started by the next translation (at first, or stopped
+    /// after a while without one).
+    Sleeping,
+    /// Downloading the build or the model, or loading the model: what it is
+    /// doing.
+    Starting(String),
     /// Running the given program or build.
     Ready(String),
     /// Something else already answers on the local endpoint.
@@ -65,11 +80,17 @@ pub struct Engine {
     /// The settings the running server started with (endpoint, server config).
     started_with: RwLock<Option<(String, ServerConfig)>>,
     status: RwLock<Status>,
+    /// An engine was chosen (saved settings): until then nothing starts.
+    configured: AtomicBool,
+    /// The last translation that needed the local server.
+    last_used: std::sync::Mutex<Instant>,
 }
 
 impl Engine {
     pub fn new(client: reqwest::Client, config: &TranslateConfig) -> anyhow::Result<Arc<Self>> {
-        let settings = match load_settings()? {
+        let saved = load_settings()?;
+        let configured = saved.is_some();
+        let settings = match saved {
             Some(saved) => saved,
             None => Settings {
                 provider: config.provider,
@@ -86,8 +107,14 @@ impl Engine {
             settings: RwLock::new(settings),
             server: Mutex::new(None),
             started_with: RwLock::new(None),
-            status: RwLock::new(Status::Stopped),
+            status: RwLock::new(if configured { Status::Sleeping } else { Status::NotConfigured }),
+            configured: AtomicBool::new(configured),
+            last_used: std::sync::Mutex::new(Instant::now()),
         }))
+    }
+
+    pub fn configured(&self) -> bool {
+        self.configured.load(Ordering::Relaxed)
     }
 
     /// Takes an edited config; a local server applies it when restarted.
@@ -104,7 +131,10 @@ impl Engine {
     }
 
     pub fn status(&self) -> Status {
-        self.status.read().unwrap().clone()
+        match &*self.status.read().unwrap() {
+            Status::Starting(_) => Status::Starting(server::phase()),
+            status => status.clone(),
+        }
     }
 
     fn set_status(&self, status: Status) {
@@ -138,18 +168,45 @@ impl Engine {
 
     /// Starts the local server if the local model is in use and none runs.
     pub async fn start(&self) {
+        if self.begin_start() {
+            self.launch().await;
+        }
+    }
+
+    pub fn start_in_background(self: &Arc<Self>) {
+        if self.begin_start() {
+            let engine = self.clone();
+            tokio::spawn(async move { engine.launch().await });
+        }
+    }
+
+    /// Moves to `Starting` at once if a start is due (so that no one reads the
+    /// state before it), or says why not.
+    fn begin_start(&self) -> bool {
         if self.settings.read().unwrap().provider != Provider::Local {
             self.set_status(Status::Stopped);
-            return;
+            return false;
         }
-        let Some(config) = self.server_config() else {
+        if self.server_config().is_none() {
             self.set_status(Status::External);
-            return;
-        };
-        if matches!(self.status(), Status::Starting) || self.server.lock().await.is_some() {
-            return;
+            return false;
         }
-        self.set_status(Status::Starting);
+        // Running already, or being stopped.
+        if self.server.try_lock().map_or(true, |server| server.is_some()) {
+            return false;
+        }
+        let mut status = self.status.write().unwrap();
+        if matches!(*status, Status::Starting(_)) {
+            return false;
+        }
+        server::set_phase("getting ready".into());
+        *status = Status::Starting(String::new());
+        *self.last_used.lock().unwrap() = Instant::now();
+        true
+    }
+
+    async fn launch(&self) {
+        let Some(config) = self.server_config() else { return };
         let url = self.config.read().unwrap().backend.url.clone();
         match server::ensure(&self.client, &url, &config).await {
             Ok(Some(started)) => {
@@ -188,14 +245,65 @@ impl Engine {
             info!(program = server.program, "stopping the translation server");
             drop(server);
         }
-        if !matches!(self.status(), Status::Starting) {
+        if !matches!(self.status(), Status::Starting(_)) {
             self.set_status(Status::Stopped);
         }
     }
 
-    pub fn start_in_background(self: &Arc<Self>) {
+    /// Whether the next translation can be made, starting the local server if
+    /// it sleeps; otherwise the message to show instead (no engine chosen, the
+    /// model downloading). Waits for the model to load, which takes seconds:
+    /// RetroArch waits up to a minute for an answer.
+    pub async fn ready(self: &Arc<Self>, page: &str) -> Result<(), String> {
+        if self.settings.read().unwrap().provider != Provider::Local {
+            return Ok(());
+        }
+        if !self.configured() {
+            return Err(format!("Fukidashi needs a translation engine: open {page} to choose one."));
+        }
+        *self.last_used.lock().unwrap() = Instant::now();
+        let failed = |error: &str| format!("The translation model could not start ({error}). See {page}.");
+        match self.status() {
+            Status::Ready(_) | Status::External => return Ok(()),
+            Status::Starting(_) => {}
+            // A failed start is tried again: it may have been a network error.
+            Status::Stopped | Status::Sleeping | Status::NotConfigured | Status::Failed(_) => {
+                info!("starting the translation server for this translation");
+                self.start_in_background();
+            }
+        }
+        let deadline = Instant::now() + Duration::from_secs(45);
+        while Instant::now() < deadline {
+            tokio::time::sleep(Duration::from_millis(250)).await;
+            match self.status() {
+                Status::Ready(_) | Status::External => return Ok(()),
+                Status::Failed(error) => return Err(failed(&error)),
+                Status::Starting(phase) if phase.starts_with("downloading") => {
+                    return Err(format!("The translation model is getting ready ({phase}). Try again once it is done: {page}"));
+                }
+                _ => {}
+            }
+        }
+        Err("The translation model is still loading. Try again in a moment.".into())
+    }
+
+    /// Stops the local server after `idle_minutes` without a translation; the
+    /// next one starts it again.
+    pub fn stop_when_idle(self: &Arc<Self>) {
         let engine = self.clone();
-        tokio::spawn(async move { engine.start().await });
+        tokio::spawn(async move {
+            loop {
+                tokio::time::sleep(Duration::from_secs(30)).await;
+                let minutes = engine.server_config().map_or(0, |s| s.idle_minutes);
+                let idle = engine.last_used.lock().unwrap().elapsed();
+                let running = matches!(engine.status(), Status::Ready(_)) && engine.server.lock().await.is_some();
+                if minutes > 0 && running && idle >= Duration::from_secs(minutes * 60) {
+                    info!(minutes, "no translation for a while: stopping the translation server, the next one starts it again");
+                    engine.stop().await;
+                    engine.set_status(Status::Sleeping);
+                }
+            }
+        });
     }
 
     pub async fn restart(self: &Arc<Self>) {
@@ -206,19 +314,38 @@ impl Engine {
     /// Applies and saves new settings; `api_key`: `None` keeps the saved key,
     /// an empty one removes it.
     pub async fn update(self: &Arc<Self>, settings: Settings, api_key: Option<String>) -> anyhow::Result<()> {
-        validate(&settings)?;
-        if let Some(key) = api_key {
-            save_api_key(key.trim())?;
-        }
-        save_settings(&settings)?;
+        save_choice(&settings, api_key)?;
         let previous = std::mem::replace(&mut *self.settings.write().unwrap(), settings.clone());
+        let first = !self.configured.swap(true, Ordering::Relaxed);
         info!(provider = ?settings.provider, "engine settings saved");
         match (previous.provider, settings.provider) {
             (Provider::Local, Provider::Remote) => self.stop().await,
-            (Provider::Remote, Provider::Local) => self.start_in_background(),
+            // The local model just chosen: downloaded and loaded now, rather
+            // than during the first translation.
+            (_, Provider::Local) if first || previous.provider == Provider::Remote => self.start_in_background(),
+            _ if first => self.set_status(Status::Stopped),
             _ => {}
         }
         Ok(())
+    }
+}
+
+/// Checks and saves an engine choice (`api_key` as for `Engine::update`),
+/// without applying it: for `fukidashi setup` while the app is not running.
+pub fn save_choice(settings: &Settings, api_key: Option<String>) -> anyhow::Result<()> {
+    validate(settings)?;
+    if let Some(key) = api_key {
+        save_api_key(key.trim())?;
+    }
+    save_settings(settings)
+}
+
+impl Engine {
+    /// Downloads what the local model needs (build, model files) without
+    /// starting it.
+    pub async fn download(&self) -> anyhow::Result<()> {
+        let config = self.server_config().context("no [translate.server] in the settings: nothing to download")?;
+        server::prepare(&self.client, &config).await.map(|_| ())
     }
 }
 

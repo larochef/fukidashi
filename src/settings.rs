@@ -62,7 +62,29 @@ pub fn apply(text: &str, edits: &[Edit]) -> anyhow::Result<String> {
             },
         }
     }
-    Ok(doc.to_string())
+    tidy(doc.as_table_mut());
+    // A removed first table leaves the blank line that separated it.
+    Ok(doc.to_string().trim_start_matches('\n').to_owned())
+}
+
+/// Drops the tables left empty by removed keys, and the headers of tables
+/// that only hold other tables (`[translate]` above `[translate.server]`).
+fn tidy(table: &mut toml_edit::Table) {
+    let mut empty = Vec::new();
+    for (key, item) in table.iter_mut() {
+        if let Item::Table(inner) = item {
+            tidy(inner);
+            if inner.is_empty() {
+                empty.push(key.get().to_owned());
+            } else {
+                let only_tables = inner.iter().all(|(_, item)| item.is_table());
+                inner.set_implicit(only_tables);
+            }
+        }
+    }
+    for key in empty {
+        table.remove(&key);
+    }
 }
 
 /// A JSON value as TOML; a number takes the type of the value it replaces, so
@@ -155,6 +177,12 @@ background = [16, 16, 24, 240]
         assert_eq!(parsed["glossary"]["星乃"].as_str(), Some("Hoshino"));
         assert_eq!(parsed["ocr"]["ヒンン"].as_str(), Some("ヒント"));
         assert_eq!(parsed["match"].as_str(), Some("KimiKiss"));
+    }
+
+    #[test]
+    fn drops_tables_left_empty() {
+        let text = apply("[render]\nwidth = 1280\n\n[translate.server]\ndraft = \"\"\n", &[edit("render.width", json!(null))]).unwrap();
+        assert_eq!(text, "[translate.server]\ndraft = \"\"\n");
     }
 
     #[test]

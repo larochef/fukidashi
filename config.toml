@@ -1,12 +1,21 @@
+# The shipped settings, embedded in the app. Yours go in
+# ~/.config/fukidashi/config.toml (written by the settings page), holding only
+# what differs from these; profiles and styles in ~/.config/fukidashi/profiles
+# and styles add to the shipped ones, or replace one of the same file name.
+
 listen = "127.0.0.1:4404"
-# Frames received from RetroArch are saved here (empty string to disable).
-capture_dir = "captures"
+# Frames received are saved here, for testing (e.g. "~/.local/share/fukidashi/captures");
+# empty: not saved.
+capture_dir = ""
+# Each game's memory (past translations, learned names); empty: none. By
+# default ~/.local/share/fukidashi/data.
+# data_dir = "~/.local/share/fukidashi/data"
 # Used when RetroArch does not send `target_lang`.
 default_target_lang = "en"
 
 [ocr]
 # PP-OCR (detection + recognition) on CPU. Model names are downloaded on first
-# use (SHA-256 checked) into $OAR_HOME, by default ~/.cache/game-translator/ocr;
+# use (SHA-256 checked) into $OAR_HOME, by default ~/.cache/fukidashi/ocr;
 # a path (~/... allowed) uses a local file instead.
 detection = "pp-ocrv6_small_det.onnx"
 recognition = "pp-ocrv6_medium_rec.onnx"
@@ -22,7 +31,7 @@ width = 960
 [translate]
 # "local": the model below, served by [translate.server]; "remote": the provider
 # of [translate.remote]. Both can be switched in the settings page
-# (http://localhost:4404/), whose choices are saved in ~/.config/game-translator.
+# (http://localhost:4404/), whose choices are saved in ~/.config/fukidashi.
 provider = "local"
 url = "http://127.0.0.1:8194/v1/chat/completions"
 model = "gemma-4-26b-a4b"
@@ -46,17 +55,17 @@ Rules:
 """
 
 # A remote OpenAI-compatible provider (only the text is sent, never the image).
-# The API key comes from the GAME_TRANSLATOR_API_KEY environment variable, or is
-# saved from the settings page in ~/.config/game-translator/secrets.toml.
+# The API key comes from the FUKIDASHI_API_KEY environment variable, or is
+# saved from the settings page in ~/.config/fukidashi/secrets.toml.
 [translate.remote]
 url = "https://openrouter.ai/api/v1"
 model = "google/gemma-4-26b-a4b-it"
 
-# Started by the app when nothing answers on `url` (remove this section to run
-# your own server). Models are `owner/repo:file` on Hugging Face, downloaded once
+# Started by the app when nothing answers on `url` (a server of your own
+# answering there is used as is). Models are `owner/repo:file` on Hugging Face, downloaded once
 # into the Hugging Face cache.
 [translate.server]
-# llama.cpp build, downloaded once into ~/.cache/game-translator/runtimes:
+# llama.cpp build, downloaded once into ~/.cache/fukidashi/runtimes:
 # "auto" picks it from the GPU (strix: ROCm for AMD Strix Halo; cuda: NVIDIA;
 # vulkan: other GPUs; cpu: none). Also "strix", "vulkan", "cuda", "cuda12",
 # "cuda13", "cpu". To run your own build instead, set command = "/path/to/llama-server"
@@ -74,6 +83,9 @@ models = { cuda = "unsloth/gemma-4-26b-a4b-it-GGUF:gemma-4-26B-A4B-it-MXFP4_MOE.
 # Speculative decoding (multi-token prediction); dropped if your llama.cpp rejects it.
 draft = "unsloth/gemma-4-26b-a4b-it-GGUF:MTP/mtp-gemma-4-26B-A4B-it-Q8_0.gguf"
 draft_args = ["--spec-type", "draft-mtp", "-ngld", "999"]
+# Minutes without a translation after which the server stops, freeing the GPU
+# memory; the next translation starts it again (a few seconds). 0: never.
+idle_minutes = 30
 # Thinking off: Gemma 4 otherwise spends its token budget reasoning.
 args = [
     "-ngl", "999", "-c", "16384", "-np", "1", "-fa", "on", "--no-webui",

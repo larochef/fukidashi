@@ -36,20 +36,41 @@ jobs:
           fetch-depth: 0
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-deb,cargo-generate-rpm
       - name: Version
+        # Written into Cargo.toml, so the binary (`fukidashi --version`) and the
+        # packages carry it.
         run: |
           base=$(cargo metadata --no-deps --format-version 1 | jq -r '.packages[0].version' | cut -d. -f1,2)
-          echo "TAG=v$base.$(git rev-list --count HEAD)" >> "$GITHUB_ENV"
+          version="$base.$(git rev-list --count HEAD)"
+          sed -i "0,/^version = .*/s//version = \"$version\"/" Cargo.toml
+          echo "VERSION=$version" >> "$GITHUB_ENV"
+          echo "TAG=v$version" >> "$GITHUB_ENV"
       - run: cargo build --release
       - name: Package
         run: |
-          dir=game-translator-$TAG-x86_64-linux
-          mkdir $dir
-          cp target/release/game-translator config.toml README.md LICENSE $dir/
-          cp -r profiles styles $dir/
+          # .deb and .rpm: the files listed in Cargo.toml's package.metadata.
+          cargo deb --no-build --output fukidashi_${VERSION}_amd64.deb
+          cargo generate-rpm --output fukidashi-${VERSION}.x86_64.rpm
+          # The archive: the app, and what the packages install beside it (for
+          # the AUR package, or by hand).
+          dir=fukidashi-$TAG-x86_64-linux
+          mkdir -p $dir/icons $dir/gnome-extension/schemas
+          cp target/release/fukidashi README.md LICENSE packaging/fukidashi.service packaging/fukidashi.desktop $dir/
+          cp assets/icons/fukidashi.svg assets/icons/fukidashi-symbolic.svg $dir/icons/
+          cp gnome-extension/*.js gnome-extension/metadata.json $dir/gnome-extension/
+          cp gnome-extension/schemas/*.xml $dir/gnome-extension/schemas/
           tar czf $dir.tar.gz $dir
-          sha256sum $dir.tar.gz > $dir.tar.gz.sha256
+          # The GNOME Shell extension alone, for `gnome-extensions install`.
+          command -v glib-compile-schemas zip > /dev/null || sudo apt-get install -y -qq libglib2.0-bin zip
+          glib-compile-schemas gnome-extension/schemas
+          (cd gnome-extension && zip -r ../fukidashi@larochef.github.io.zip .)
+          sha256sum $dir.tar.gz *.deb *.rpm fukidashi@larochef.github.io.zip > SHA256SUMS
       - name: Publish
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release create "$TAG" game-translator-*.tar.gz* --target "$GITHUB_SHA" --title "$TAG" --generate-notes
+        run: >
+          gh release create "$TAG" fukidashi-*.tar.gz *.deb *.rpm fukidashi@larochef.github.io.zip SHA256SUMS
+          --target "$GITHUB_SHA" --title "$TAG" --generate-notes

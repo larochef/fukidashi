@@ -1,8 +1,59 @@
 [package]
-name = "game-translator"
+name = "fukidashi"
 version = "0.1.0"
 edition = "2024"
-license = "Apache-2.0"
+license = "MIT"
+description = "Translates the Japanese text of games while you play, on your own machine"
+authors = ["François Laroche <1265730+larochef@users.noreply.github.com>"]
+homepage = "https://github.com/larochef/fukidashi"
+repository = "https://github.com/larochef/fukidashi"
+readme = "README.md"
+
+# The packages (.deb and .rpm, built by the CI with cargo-deb and
+# cargo-generate-rpm) install the same files: the app, its user service and
+# menu entry, the icons, and the GNOME Shell extension with its settings
+# schema (the system compiles schemas and icon caches on install).
+[package.metadata.deb]
+section = "games"
+priority = "optional"
+depends = "$auto"
+license-file = ["LICENSE", "0"]
+suggests = "retroarch, gnome-shell, libmanette-0.2-0"
+extended-description = """\
+Press a key: the screen is read (OCR), its Japanese text translated by a \
+local LLM (llama.cpp, downloaded on demand) or an OpenAI-compatible \
+provider, and the translation drawn over the original text. Works with \
+RetroArch's AI Service, and with any window through a GNOME Shell extension."""
+assets = [
+    ["target/release/fukidashi", "usr/bin/", "755"],
+    ["packaging/fukidashi.service", "usr/lib/systemd/user/", "644"],
+    ["packaging/fukidashi.desktop", "usr/share/applications/", "644"],
+    ["assets/icons/fukidashi.svg", "usr/share/icons/hicolor/scalable/apps/", "644"],
+    ["assets/icons/fukidashi-symbolic.svg", "usr/share/icons/hicolor/symbolic/apps/", "644"],
+    ["gnome-extension/extension.js", "usr/share/gnome-shell/extensions/fukidashi@larochef.github.io/", "644"],
+    ["gnome-extension/prefs.js", "usr/share/gnome-shell/extensions/fukidashi@larochef.github.io/", "644"],
+    ["gnome-extension/language.js", "usr/share/gnome-shell/extensions/fukidashi@larochef.github.io/", "644"],
+    ["gnome-extension/metadata.json", "usr/share/gnome-shell/extensions/fukidashi@larochef.github.io/", "644"],
+    ["gnome-extension/schemas/org.gnome.shell.extensions.fukidashi.gschema.xml", "usr/share/glib-2.0/schemas/", "644"],
+    ["README.md", "usr/share/doc/fukidashi/", "644"],
+]
+
+[package.metadata.generate-rpm]
+summary = "Translates the Japanese text of games while you play"
+assets = [
+    { source = "target/release/fukidashi", dest = "/usr/bin/fukidashi", mode = "755" },
+    { source = "packaging/fukidashi.service", dest = "/usr/lib/systemd/user/fukidashi.service", mode = "644" },
+    { source = "packaging/fukidashi.desktop", dest = "/usr/share/applications/fukidashi.desktop", mode = "644" },
+    { source = "assets/icons/fukidashi.svg", dest = "/usr/share/icons/hicolor/scalable/apps/fukidashi.svg", mode = "644" },
+    { source = "assets/icons/fukidashi-symbolic.svg", dest = "/usr/share/icons/hicolor/symbolic/apps/fukidashi-symbolic.svg", mode = "644" },
+    { source = "gnome-extension/extension.js", dest = "/usr/share/gnome-shell/extensions/fukidashi@larochef.github.io/", mode = "644" },
+    { source = "gnome-extension/prefs.js", dest = "/usr/share/gnome-shell/extensions/fukidashi@larochef.github.io/", mode = "644" },
+    { source = "gnome-extension/language.js", dest = "/usr/share/gnome-shell/extensions/fukidashi@larochef.github.io/", mode = "644" },
+    { source = "gnome-extension/metadata.json", dest = "/usr/share/gnome-shell/extensions/fukidashi@larochef.github.io/", mode = "644" },
+    { source = "gnome-extension/schemas/org.gnome.shell.extensions.fukidashi.gschema.xml", dest = "/usr/share/glib-2.0/schemas/org.gnome.shell.extensions.fukidashi.gschema.xml", mode = "644" },
+    { source = "README.md", dest = "/usr/share/doc/fukidashi/README.md", mode = "644", doc = true },
+    { source = "LICENSE", dest = "/usr/share/licenses/fukidashi/LICENSE", mode = "644", doc = true },
+]
 
 [dependencies]
 ab_glyph = "0.2"

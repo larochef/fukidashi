@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<schemalist>
+  <schema id="org.gnome.shell.extensions.fukidashi" path="/org/gnome/shell/extensions/fukidashi/">
+    <key name="translate" type="as">
+      <default><![CDATA[['<Super>t']]]></default>
+      <summary>Key that shows the translation of the screen, or hides it</summary>
+    </key>
+    <key name="server" type="s">
+      <default>'http://localhost:4404/'</default>
+      <summary>Address of Fukidashi</summary>
+    </key>
+    <key name="target-lang" type="s">
+      <default>''</default>
+      <summary>Language to translate into (e.g. fr); empty for the system's language</summary>
+    </key>
+  </schema>
+</schemalist>

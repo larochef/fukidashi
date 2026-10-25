@@ -3,7 +3,8 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Game Translator</title>
+<title>Fukidashi</title>
+<link rel="icon" type="image/svg+xml" href="/favicon.svg">
 <style>
   :root {
     --bg: #f6f7f9; --panel: #ffffff; --text: #1c2026; --muted: #646b75; --line: #dfe3e8;
@@ -95,15 +96,45 @@
 </head>
 <body>
 <header>
-  <h1>Game Translator</h1>
+  <h1>Fukidashi</h1>
   <nav>
+    <a href="#welcome" data-page="welcome">Getting started</a>
     <a href="#engine" data-page="engine">Translation engine</a>
     <a href="#settings" data-page="settings">Settings</a>
     <a href="#games" data-page="games">Games</a>
   </nav>
 </header>
 <main>
-<div class="page" id="page-engine">
+<div class="page hidden" id="page-welcome">
+  <section>
+    <h2>Welcome to Fukidashi</h2>
+    <p>Fukidashi reads the Japanese text on screen and draws its translation over it, where the text was. First, choose where the text is translated: nothing is downloaded until you do.</p>
+  </section>
+  <section>
+    <h2>On this computer</h2>
+    <p class="hint">A local model: private, free, and it works offline. It needs about 20 GB of GPU or unified memory; it is loaded with the first translation and unloaded after a while without one.</p>
+    <div class="grid">
+      <label>GPU</label><div id="w-gpu">…</div>
+      <label>Model</label><div><code id="w-model">…</code></div>
+      <label>Download</label><div id="w-size">…</div>
+    </div>
+    <div class="row" style="margin-top: 16px">
+      <button class="primary" id="w-local">Use the local model</button>
+      <span class="message" id="w-local-message"></span>
+    </div>
+  </section>
+  <section>
+    <h2>With a provider</h2>
+    <p class="hint">An OpenAI-compatible service (OpenRouter, a server on another machine): nothing to download. Only the text of the screen is sent, never the image.</p>
+    <button id="w-remote">Set up a provider</button>
+  </section>
+  <section>
+    <h2>This computer</h2>
+    <div class="system-box"></div>
+  </section>
+</div>
+
+<div class="page hidden" id="page-engine">
   <section>
     <div class="row" style="justify-content: space-between">
       <div>
@@ -194,7 +225,7 @@
 <div class="page hidden" id="page-settings">
   <section>
     <h2>General</h2>
-    <p class="hint">Saved to <code id="config-path">config.toml</code>, keeping its comments, and applied at once.</p>
+    <p class="hint">Saved to <code id="config-path">config.toml</code>, which keeps only what differs from the shipped settings, and applied at once.</p>
     <div class="grid" data-group="general"></div>
   </section>
   <section>
@@ -213,14 +244,22 @@
     <div class="grid" data-group="render"></div>
   </section>
   <section>
+    <h2>This computer</h2>
+    <div class="system-box"></div>
+  </section>
+  <section>
     <details id="advanced">
-      <summary>Edit config.toml</summary>
-      <p class="hint" style="margin-top: 10px">Everything, including what has no field above (server arguments, OCR models). Checked before it is saved.</p>
+      <summary>Edit your settings file</summary>
+      <p class="hint" style="margin-top: 10px">Everything, including what has no field above (server arguments, OCR models): only the settings that differ from the shipped ones, which are below. Checked before it is saved.</p>
       <textarea class="raw" id="raw" spellcheck="false"></textarea>
       <div class="row" style="margin-top: 12px">
         <button id="save-raw">Save the file</button>
         <button id="reload-config">Reload from disk</button>
       </div>
+      <details style="margin-top: 12px">
+        <summary>Shipped settings</summary>
+        <pre id="defaults" style="margin-top: 10px"></pre>
+      </details>
     </details>
   </section>
   <div class="bar">
@@ -282,7 +321,9 @@ function showStatus(data) {
       text = "Running " + s.detail + (data.restart_needed ? " · restart to apply the new settings" : "");
       level = data.restart_needed ? "warn" : "ok";
       break;
-    case "starting": text = "Starting…"; level = "warn"; break;
+    case "starting": text = "Starting" + (s.detail ? ": " + s.detail : "…"); level = "warn"; break;
+    case "sleeping": text = "Not loaded · starts with the next translation"; level = "ok"; break;
+    case "not_configured": text = "No engine chosen yet"; level = "warn"; break;
     case "external": text = "Using a server already running"; level = "ok"; break;
     case "failed": text = "Failed to start"; level = "bad"; break;
     default: text = "Stopped"; level = "";
@@ -290,6 +331,30 @@ function showStatus(data) {
   $("status-text").textContent = text;
   $("status-text").title = s.state === "failed" ? s.detail : "";
   $("status-dot").className = "dot " + level;
+}
+
+const gb = (bytes) => (bytes / 1073741824).toFixed(1) + " GB";
+
+// The first-run page: what the local model needs, and how its start goes.
+function showWelcome(data) {
+  $("w-gpu").textContent = gpuText(data.local.gpus);
+  $("w-model").textContent = data.local.model || "–";
+  $("w-size").textContent = data.local.model_cached ? "Already downloaded"
+    : data.local.model_size ? gb(data.local.model_size) + ", plus the llama.cpp build for your GPU (35 to 600 MB)"
+    : "About 16 GB, plus the llama.cpp build for your GPU";
+  const s = data.status;
+  let text = "", level = "";
+  if (data.configured && data.provider === "local") {
+    if (s.state === "starting") { text = s.detail ? s.detail.charAt(0).toUpperCase() + s.detail.slice(1) + "…" : "Starting…"; level = "warn"; }
+    else if (s.state === "ready" || s.state === "external") { text = "Ready: the model is loaded."; level = "ok"; }
+    else if (s.state === "sleeping") { text = "Ready: the model loads with the first translation."; level = "ok"; }
+    else if (s.state === "failed") { text = "Failed to start: " + s.detail; level = "bad"; }
+  } else if (data.configured) {
+    text = "A provider is in use (Translation engine page).";
+  }
+  $("w-local-message").textContent = text;
+  $("w-local-message").className = "message " + level;
+  $("w-local").disabled = data.configured && data.provider === "local";
 }
 
 function showBuilds(local) {
@@ -313,6 +378,7 @@ function showBuilds(local) {
 function show(data, live) {
   state = data;
   showStatus(data);
+  showWelcome(data);
   showBuilds(data.local);
   $("gpu").textContent = gpuText(data.local.gpus);
   $("model").textContent = data.local.model || "–";
@@ -402,6 +468,59 @@ $("log-source").addEventListener("click", (e) => {
   refresh();
 });
 $("save").addEventListener("click", () => save());
+$("w-local").addEventListener("click", async () => {
+  try {
+    const body = {
+      provider: "local",
+      local: { runtime: state.local.runtime, release: state.local.release, update: state.local.update },
+      remote: { url: state.remote.url, model: state.remote.model, extra: state.remote.extra },
+    };
+    show(await api("/api/engine", { method: "PUT", body }), false);
+  } catch (error) { $("w-local-message").textContent = error.message; $("w-local-message").className = "message bad"; }
+});
+$("w-remote").addEventListener("click", () => { location.hash = "#engine"; showProvider("remote"); });
+
+// ---- This computer: starting with the session, the GNOME extension
+
+async function setSystem(change) {
+  try { showSystem(await api("/api/system", { method: "PUT", body: change })); } catch (error) { showSystem(null, error.message); }
+}
+
+function showSystem(sys, error) {
+  for (const box of document.querySelectorAll(".system-box")) {
+    const rows = [];
+    if (error) rows.push(Object.assign(document.createElement("p"), { className: "message bad", textContent: error }));
+    if (sys) {
+      if (sys.service === "none") {
+        rows.push(Object.assign(document.createElement("p"), { className: "hint", textContent: "Started by hand: Fukidashi's package adds a user service, to start it with your session." }));
+      } else {
+        const label = document.createElement("label");
+        const box = Object.assign(document.createElement("input"), { type: "checkbox", checked: sys.service === "enabled" });
+        box.addEventListener("change", () => setSystem({ autostart: box.checked }));
+        label.append(box, " Start Fukidashi when I log in");
+        rows.push(label);
+      }
+      if (sys.gnome) {
+        const ext = sys.extension || {};
+        const p = document.createElement("p");
+        if (!ext.installed) p.textContent = "GNOME extension (translates any screen with Super+T): not installed; it comes with Fukidashi's package.";
+        else if (!ext.enabled) {
+          p.textContent = "GNOME extension: translates any screen, not only RetroArch, with Super+T. ";
+          const button = Object.assign(document.createElement("button"), { textContent: "Enable it" });
+          button.addEventListener("click", () => setSystem({ extension: true }));
+          p.append(button);
+        } else if (ext.state !== "ACTIVE") p.textContent = "GNOME extension enabled: log out and back in to load it, then Super+T translates the screen.";
+        else p.textContent = "GNOME extension active: Super+T translates the screen.";
+        rows.push(p);
+      }
+    }
+    box.replaceChildren(...rows);
+  }
+}
+
+async function loadSystem() {
+  try { showSystem(await api("/api/system")); } catch (error) { showSystem(null, error.message); }
+}
 $("test").addEventListener("click", test);
 $("clear-key").addEventListener("click", () => save(""));
 $("restart").addEventListener("click", async () => {
@@ -411,8 +530,12 @@ $("check").addEventListener("click", async () => {
   try { await api("/api/engine/check", { method: "POST" }); message("Checking — see the log."); } catch (error) { message(error.message, "bad"); }
 });
 
-api("/api/engine").then((data) => show(data, false)).catch((error) => message(error.message, "bad"));
-setInterval(() => { if (page === "engine") refresh(); }, 2000);
+api("/api/engine").then((data) => {
+  // First start: nothing chosen yet.
+  if (!data.configured && !location.hash) location.hash = "#welcome";
+  show(data, false);
+}).catch((error) => message(error.message, "bad"));
+setInterval(() => { if (page === "engine" || page === "welcome") refresh(); }, 2000);
 refresh();
 
 // ---- Pages
@@ -420,9 +543,10 @@ refresh();
 let page = "engine";
 function showPage() {
   const hash = location.hash.slice(1);
-  page = hash.startsWith("games") ? "games" : hash === "settings" ? "settings" : "engine";
+  page = hash.startsWith("games") ? "games" : ["settings", "welcome"].includes(hash) ? hash : "engine";
   for (const a of document.querySelectorAll("nav a[data-page]")) a.classList.toggle("active", a.dataset.page === page);
-  for (const name of ["engine", "settings", "games"]) $("page-" + name).classList.toggle("hidden", page !== name);
+  for (const name of ["welcome", "engine", "settings", "games"]) $("page-" + name).classList.toggle("hidden", page !== name);
+  if (page === "welcome" || page === "settings") loadSystem();
   document.querySelector("main").classList.toggle("wide", page === "games");
   if (page === "settings") loadSettings();
   if (page === "games") {
@@ -441,7 +565,7 @@ const LANGUAGES = [["en", "English"], ["fr", "French"], ["de", "German"], ["es",
 // key, label, type, help, options
 const FIELDS = [
   ["general", "default_target_lang", "Target language", "select", "Used when RetroArch does not send one (set it in RetroArch's AI Service settings).", LANGUAGES],
-  ["general", "capture_dir", "Save captures to", "optional", "Frames received from RetroArch, kept for testing. Empty: not saved."],
+  ["general", "capture_dir", "Save captures to", "optional", "Frames received, kept for testing (e.g. ~/.local/share/fukidashi/captures). Empty: not saved."],
   ["general", "listen", "Listen on", "text", "Address of this app, as set in RetroArch. Applies after a restart."],
   ["ocr", "ocr.width", "Width", "int", "Frames are resized to this width before OCR: small pixel fonts read better upscaled."],
   ["ocr", "ocr.box_threshold", "Box threshold", "float", "Lower finds faint or stylized labels, at the cost of a few stray fragments (0.5).", 0.05],
@@ -522,7 +646,7 @@ function readField(input) {
     case "bool": return input.checked;
     case "int": return input.value === "" ? null : parseInt(input.value, 10);
     case "float": return input.value === "" ? null : parseFloat(input.value);
-    case "optional": return input.value.trim() === "" ? null : input.value.trim();
+    case "optional": return input.value.trim();
     case "color": {
       const [color, alpha] = input.children;
       const c = color.value;
@@ -570,6 +694,7 @@ function fillSettings(data) {
     input._initial = readField(input);
   }
   $("raw").value = data.text;
+  $("defaults").textContent = data.defaults;
   markChanged();
 }
 
