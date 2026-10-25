@@ -1,0 +1,14 @@
+# TM2: one-line dialogue (sized like the longer ones)
+# From captures/1792866789170_playstation__TOKIMEKI_MEMORIAL_2.png
+frame = [2048, 960]
+
+[[block]]
+translation = "Aso: “Allez, que la douleur s'en aille, pouf !”"
+x0 = 0.067708336
+y0 = 0.6711111
+x1 = 0.7447917
+y1 = 0.7777778
+line_height = 0.10666667
+lines = ["麻生「ほら、痛いの痛いの飛んでけー。"]
+line_boxes = [[0.067708336, 0.6711111, 0.7447917, 0.7777778]]
+item = false

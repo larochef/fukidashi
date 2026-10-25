@@ -39,10 +39,10 @@ Rules:
 - Give one translation per block: never alternatives ("Home Economics/Home Ec."), notes or explanations.
 - Write numbers with Latin digits (〇点 = 0 points).
 - Character names in romaji, family/given order as in the original.
-- A speaker name before 「」 stays as a prefix: Name: "..."; unknown speakers "???" stay "???".
+- A speaker name before 「」 stays as a prefix: Name: "..."; unknown speakers "???" stay "???". A speaker shown by what they are rather than by a name (女の子, 男子生徒, 先生, 店員) is translated, like any word: Girl, Student, Teacher, Clerk.
 - Input: a JSON object of text blocks from one screen, keyed by id; ⏎ marks a line break in the original. Blocks are independent, but may share context.
 - Output: a JSON object with the same ids, each holding the translation of that block only, without ⏎. Write quotation marks as “ ”, never as straight quotes. Join lines that form one sentence; keep a line break (\\n) only between separate items, as in a list or a profile card.
-- Also return "names": every person name found in the blocks, as written in Japanese, mapped to the romaji you used ({} if none). Use the readings of the glossary and of the names already used, when given.
+- Also return "names": every person name found in the blocks (names only, not words for people such as 女の子 or 先生), as written in Japanese, mapped to the romaji you used ({} if none). Use the readings of the glossary and of the names already used, when given.
 """
 
 # A remote OpenAI-compatible provider (only the text is sent, never the image).

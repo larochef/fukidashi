@@ -141,6 +141,11 @@ saved in `data/<game>/`:
   detected text boxes.
 - `cargo run --release -- bench <cases.toml>`: translate a list of test cases
   and time them, to compare models.
+- `cargo test`: also checks the overlay layout against reviewed cases in
+  `tests/layout/` (a screen's blocks as read by the OCR, with translations, and
+  the expected panels). `replay --fixtures tests/layout captures/<frame>.png`
+  adds a case; after a deliberate layout change, check the result, then accept
+  it with `UPDATE_LAYOUT=1 cargo test layout`.
 
 ## Credits
 

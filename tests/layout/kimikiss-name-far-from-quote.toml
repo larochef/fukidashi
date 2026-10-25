@@ -1,0 +1,16 @@
+# KimiKiss: one-character name far from its 「 (柊　「)
+# From captures/1792880237217_playstation2__KimiKiss__Japan_.png
+frame = [2560, 1792]
+
+[[block]]
+translation = """
+Aihara : « Pourquoi est-ce qu'elle mange toute seule ? Est-ce qu'elle ne laisse personne s'asseoir à côté d'elle ? »
+Hiiragi : « Pas du tout. Elle ne dit rien du tout »"""
+x0 = 0.0625
+y0 = 0.6458333
+x1 = 0.825
+y1 = 0.9255952
+line_height = 0.08184524
+lines = ["相原「どうして彼女は一人で食べてるんだ？", "彼女が座らせないとか？」", "柊「まさか。彼女は何も言わないよ」"]
+line_boxes = [[0.0625, 0.6458333, 0.825, 0.7276786], [0.20520833, 0.74553573, 0.6375, 0.82738096], [0.1, 0.8422619, 0.803125, 0.9255952]]
+item = false

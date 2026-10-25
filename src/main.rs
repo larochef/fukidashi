@@ -2,7 +2,7 @@
 //!
 //! Usage:
 //!   game-translator [--config FILE] [serve]
-//!   game-translator [--config FILE] replay [--lang CODE] [--label LABEL] [--ocr-only] [--out DIR] CAPTURE.png...
+//!   game-translator [--config FILE] replay [--lang CODE] [--label LABEL] [--ocr-only] [--out DIR] [--fixtures DIR] CAPTURE.png...
 //!   game-translator [--config FILE] bench [--lang CODE] CASES.toml
 
 mod config;
@@ -363,7 +363,12 @@ async fn replay(app: Arc<App>, mut args: Vec<String>) -> anyhow::Result<()> {
     let forced_label = take_option(&mut args, "--label");
     let out_dir = PathBuf::from(take_option(&mut args, "--out").unwrap_or_else(|| "replay".into()));
     let ocr_only = take_flag(&mut args, "--ocr-only");
+    // Layout test cases: the blocks and translations of each capture.
+    let fixtures = take_option(&mut args, "--fixtures").map(PathBuf::from);
     std::fs::create_dir_all(&out_dir)?;
+    if let Some(dir) = &fixtures {
+        std::fs::create_dir_all(dir)?;
+    }
 
     for path in args.iter().map(PathBuf::from) {
         let stem = path.file_stem().and_then(|s| s.to_str()).unwrap_or("capture").to_owned();
@@ -378,6 +383,19 @@ async fn replay(app: Arc<App>, mut args: Vec<String>) -> anyhow::Result<()> {
             if let Some(translation) = outcome.translations.get(i) {
                 println!("      → {translation}");
             }
+        }
+        if let Some(dir) = fixtures.as_ref().filter(|_| !ocr_only) {
+            let fixture = render::Fixture {
+                frame: [frame.width(), frame.height()],
+                blocks: outcome
+                    .blocks
+                    .iter()
+                    .zip(&outcome.translations)
+                    .map(|(block, translation)| render::FixtureBlock { translation: translation.clone(), block: block.clone() })
+                    .collect(),
+            };
+            let text = format!("# {}\n{}", path.display(), toml::to_string(&fixture)?);
+            std::fs::write(dir.join(format!("{stem}.toml")), text)?;
         }
         if ocr_only {
             let boxes = render::draw_boxes(&frame, &outcome.blocks, app.live().config.render.width);

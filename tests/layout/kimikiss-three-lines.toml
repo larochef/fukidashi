@@ -1,0 +1,16 @@
+# KimiKiss: three lines of one speaker
+# From captures/1792843235824_playstation2__KimiKiss__Japan_.png
+frame = [2560, 1792]
+
+[[block]]
+translation = """
+Aihara (C'est vrai. Elle est mignonne, mais comme elle est réservée, elle ne se fait pas remarquer.
+· Au contraire, c'est justement ce que j'aime chez elle.)"""
+x0 = 0.061458334
+y0 = 0.6443452
+x1 = 0.94375
+y1 = 0.9255952
+line_height = 0.084821425
+lines = ["相原（そうなんだよな。彼女、かわいいんだけど", "大人しいから目立たないんだよな。", "·逆に、そこがよかったりするんだけど）"]
+line_boxes = [[0.061458334, 0.6443452, 0.903125, 0.7306548], [0.20416667, 0.74404764, 0.771875, 0.82589287], [0.234375, 0.8407738, 0.94375, 0.9255952]]
+item = false

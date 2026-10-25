@@ -97,6 +97,7 @@ impl Translator {
                 !romaji.is_empty()
                     && romaji.chars().count() <= 40
                     && ja.chars().any(is_japanese)
+                    && !NOT_NAMES.contains(&ja.as_str())
                     && missing.iter().any(|&i| texts[i].contains(ja.as_str()))
                     && !profile.is_some_and(|p| p.glossary.contains_key(ja))
             })
@@ -185,6 +186,13 @@ fn with_known_names(request: &str, learned: &BTreeMap<String, String>, profile: 
     }
     format!("Names already used in this game: {}\n{request}", known.join(", "))
 }
+
+/// Words games show in place of a speaker's name, which models tend to return
+/// as names: learned, they would stay in romaji ("Onna no ko") everywhere.
+const NOT_NAMES: &[&str] = &[
+    "女の子", "男の子", "少女", "少年", "女", "男", "女子", "男子", "生徒", "先生", "警官", "店員", "子供", "母", "父", "お母さん", "お父さん", "おばあさん",
+    "おじいさん", "婆さま", "爺さま", "お姉さん", "お兄さん", "おばさん", "おじさん",
+];
 
 fn is_japanese(c: char) -> bool {
     matches!(c, '\u{3040}'..='\u{30ff}' | '\u{3400}'..='\u{4dbf}' | '\u{4e00}'..='\u{9fff}')

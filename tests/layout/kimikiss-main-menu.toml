@@ -1,0 +1,82 @@
+# KimiKiss main menu (buttons, plain white title box)
+# From captures/1792762716161_playstation2__KimiKiss__Japan_.png
+frame = [2560, 1792]
+
+[[block]]
+translation = "Valider"
+x0 = 0.88958335
+y0 = 0.05654762
+x1 = 0.96875
+y1 = 0.1279762
+line_height = 0.071428575
+lines = ["決定"]
+line_boxes = [[0.88958335, 0.05654762, 0.96875, 0.1279762]]
+item = false
+
+[[block]]
+translation = "Menu principal"
+x0 = 0.125
+y0 = 0.077380955
+x1 = 0.36770833
+y1 = 0.17559524
+line_height = 0.09821428
+lines = ["メインメニュー"]
+line_boxes = [[0.125, 0.077380955, 0.36770833, 0.17559524]]
+item = false
+
+[[block]]
+translation = "Retour"
+x0 = 0.865625
+y0 = 0.114583336
+x1 = 0.940625
+y1 = 0.18601191
+line_height = 0.071428575
+lines = ["戻る"]
+line_boxes = [[0.865625, 0.114583336, 0.940625, 0.18601191]]
+item = false
+
+[[block]]
+translation = "Depuis le début"
+x0 = 0.09375
+y0 = 0.3169643
+x1 = 0.23541667
+y1 = 0.37202382
+line_height = 0.055059522
+lines = ["はじめから"]
+line_boxes = [[0.09375, 0.3169643, 0.23541667, 0.37202382]]
+item = false
+
+[[block]]
+translation = "Continuer"
+x0 = 0.088541664
+y0 = 0.38839287
+x1 = 0.228125
+y1 = 0.4434524
+line_height = 0.055059522
+lines = ["つづきから"]
+line_boxes = [[0.088541664, 0.38839287, 0.228125, 0.4434524]]
+item = false
+
+[[block]]
+translation = "Album"
+x0 = 0.098958336
+y0 = 0.45833334
+x1 = 0.21666667
+y1 = 0.51488096
+line_height = 0.05654762
+lines = ["アルバム"]
+line_boxes = [[0.098958336, 0.45833334, 0.21666667, 0.51488096]]
+item = false
+
+[[block]]
+translation = """
+Bonus
+Paramètres"""
+x0 = 0.11145833
+y0 = 0.5297619
+x1 = 0.203125
+y1 = 0.66369045
+line_height = 0.06845238
+lines = ["おまけ", "設定"]
+line_boxes = [[0.11145833, 0.5297619, 0.203125, 0.58779764], [0.11875, 0.5952381, 0.19479166, 0.66369045]]
+item = false

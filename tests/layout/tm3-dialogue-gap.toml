@@ -1,0 +1,27 @@
+# TM3: dialogue with a gap inside the line (Moi「牧原…牧原 ……牧原」)
+# From captures/1792765157623_playstation2__Tokimeki_Memorial_3_-_Yakusoku_no_Ano_Basho_de__Japan_.png
+frame = [2560, 1792]
+
+[[block]]
+translation = "Mardi 9 avril 2002"
+x0 = 0.065625
+y0 = 0.06994048
+x1 = 0.40625
+y1 = 0.15178572
+line_height = 0.08184524
+lines = ["2002年 4月9日（火）"]
+line_boxes = [[0.065625, 0.06994048, 0.40625, 0.15178572]]
+item = false
+
+[[block]]
+translation = """
+Moi: “Makihara… Makihara
+Makihara”"""
+x0 = 0.030208332
+y0 = 0.6964286
+x1 = 0.51770836
+y1 = 0.80505955
+line_height = 0.108630955
+lines = ["Moi「牧原…牧原", "牧原"]
+line_boxes = [[0.030208332, 0.6964286, 0.378125, 0.80505955], [0.428125, 0.6994048, 0.51770836, 0.8020833]]
+item = false

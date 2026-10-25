@@ -1,0 +1,47 @@
+# KimiKiss relationship grid (スキ in a stylized font)
+# From captures/1792838848264_playstation2__KimiKiss__Japan_.png
+frame = [2560, 1792]
+
+[[block]]
+translation = "Retour"
+x0 = 0.8677083
+y0 = 0.114583336
+x1 = 0.95416665
+y1 = 0.18898809
+line_height = 0.07440476
+lines = ["戻る"]
+line_boxes = [[0.8677083, 0.114583336, 0.95416665, 0.18898809]]
+item = false
+
+[[block]]
+translation = "Tout le monde"
+x0 = 0.12708333
+y0 = 0.18601191
+x1 = 0.19895834
+y1 = 0.2470238
+line_height = 0.061011903
+lines = ["全員"]
+line_boxes = [[0.12708333, 0.18601191, 0.19895834, 0.2470238]]
+item = false
+
+[[block]]
+translation = "Aime"
+x0 = 0.409375
+y0 = 0.45386904
+x1 = 0.50104165
+y1 = 0.50744045
+line_height = 0.05357143
+lines = ["スキ"]
+line_boxes = [[0.409375, 0.45386904, 0.50104165, 0.50744045]]
+item = false
+
+[[block]]
+translation = "Amis proches"
+x0 = 0.715625
+y0 = 0.45982143
+x1 = 0.87708336
+y1 = 0.51339287
+line_height = 0.05357143
+lines = ["ナカョシ"]
+line_boxes = [[0.715625, 0.45982143, 0.87708336, 0.51339287]]
+item = false

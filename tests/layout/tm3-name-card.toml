@@ -1,0 +1,71 @@
+# TM3 options (vertical list) and EVS name card (form fields)
+# From captures/1792764908924_playstation2__Tokimeki_Memorial_3_-_Yakusoku_no_Ano_Basho_de__Japan_.png
+frame = [2560, 1792]
+
+[[block]]
+translation = "Saisie du nom de famille: François"
+x0 = 0.29583332
+y0 = 0.090773806
+x1 = 0.6645833
+y1 = 0.20535715
+line_height = 0.114583336
+lines = ["苗字入力ふらんそわ"]
+line_boxes = [[0.29583332, 0.090773806, 0.6645833, 0.20535715]]
+item = false
+
+[[block]]
+translation = "Saisie du prénom: Larush"
+x0 = 0.296875
+y0 = 0.2514881
+x1 = 0.62604165
+y1 = 0.36160713
+line_height = 0.110119045
+lines = ["名前入力らるしゅ"]
+line_boxes = [[0.296875, 0.2514881, 0.62604165, 0.36160713]]
+item = false
+
+[[block]]
+translation = "Nouvelle création"
+x0 = 0.10625
+y0 = 0.3497024
+x1 = 0.22916667
+y1 = 0.42113096
+line_height = 0.071428575
+lines = ["新規作成"]
+line_boxes = [[0.10625, 0.3497024, 0.22916667, 0.42113096]]
+item = false
+
+[[block]]
+translation = "Saisie du surnom: Fuanshu"
+x0 = 0.29583332
+y0 = 0.4077381
+x1 = 0.6614583
+y1 = 0.51636904
+line_height = 0.108630955
+lines = ["あだ名入力ふあんしゅ"]
+line_boxes = [[0.29583332, 0.4077381, 0.6614583, 0.51636904]]
+item = false
+
+[[block]]
+translation = """
+L'EVS sera créé avec ce nom.
+Êtes-vous sûr ?"""
+x0 = 0.07604167
+y0 = 0.5654762
+x1 = 0.64166665
+y1 = 0.70386904
+line_height = 0.084821425
+lines = ["ＥＶＳをこの呼び方で作成します。", "よろしいですか？"]
+line_boxes = [[0.07604167, 0.5654762, 0.64166665, 0.65029764], [0.077083334, 0.63095236, 0.36979166, 0.70386904]]
+item = false
+
+[[block]]
+translation = "Créer"
+x0 = 0.35
+y0 = 0.75744045
+x1 = 0.46666667
+y1 = 0.8139881
+line_height = 0.05654762
+lines = ["作成"]
+line_boxes = [[0.35, 0.75744045, 0.46666667, 0.8139881]]
+item = false

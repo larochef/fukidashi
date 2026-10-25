@@ -1,0 +1,14 @@
+# TM4: name + 「」 on one line, then an anonymous speaker
+# From captures/1792703369245_playstation_portable__Tokimeki_Memorial_4_JPN_PSP-Caravan.png
+frame = [480, 270]
+
+[[block]]
+translation = "“...Réveille-toi ! Réveille-toi, enfin ! Je te dis, réveille-toi !”"
+x0 = 0.14166667
+y0 = 0.79814816
+x1 = 0.62708336
+y1 = 1.0
+line_height = 0.085185185
+lines = ["「……なさい!", "起きなさいよー、ねぇってば!", "起きなさーい!」"]
+line_boxes = [[0.14166667, 0.79814816, 0.36145833, 0.87777776], [0.159375, 0.8537037, 0.62708336, 0.9425926], [0.159375, 0.91481483, 0.421875, 1.0]]
+item = false

@@ -1,0 +1,17 @@
+[0] 126,64 1745x433 size 55.2
+    ~ Veuillez entrer votre nom
+    Entrez le nom de famille, le prénom, la lecture du prénom et le surnom dans cet ordre
+    Les kanjis sont recherchés par leur lecture on'y, mais si vous saisissez en kana et
+    utilisez la conversion, vous pourrez choisir parmi la liste des noms enregistrés
+[1] 752,532 206x79 size 55.2
+    Valider
+[1] 758,616 348x79 size 55.2
+    Annuler
+[1] 754,701 696x79 size 55.2
+    Déplacement du curseur de saisie
+[1] 764,784 465x79 size 55.2
+    Supprimer 1 caractère
+[1] 756,869 207x79 size 55.2
+    Convertir
+[1] 768,958 879x79 size 55.2
+    Terminer la saisie de l'élément sélectionné

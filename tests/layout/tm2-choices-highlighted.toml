@@ -1,0 +1,39 @@
+# TM2: three choices, one highlighted, under a date and a place
+# From captures/1792867435821_playstation__TOKIMEKI_MEMORIAL_2.png
+frame = [1280, 960]
+
+[[block]]
+translation = "Le sanctuaire de Hibiki"
+x0 = 0.6145833
+y0 = 0.10694444
+x1 = 0.84375
+y1 = 0.20277777
+line_height = 0.09583333
+lines = ["ひびきの神社"]
+line_boxes = [[0.6145833, 0.10694444, 0.84375, 0.20277777]]
+item = false
+
+[[block]]
+translation = "27 mars 1992 (tout public)"
+x0 = 0.053125
+y0 = 0.12361111
+x1 = 0.39583334
+y1 = 0.19027779
+line_height = 0.06666667
+lines = ["1992年 3月27日(全)"]
+line_boxes = [[0.053125, 0.12361111, 0.39583334, 0.19027779]]
+item = false
+
+[[block]]
+translation = """
+“Pour que les résultats s'améliorent...”
+“Pour que nous restions en bonne santé à l'avenir...”
+“Pour que nous puissions continuer à être tous ensemble...”"""
+x0 = 0.071875
+y0 = 0.64166665
+x1 = 0.88645834
+y1 = 0.88611114
+line_height = 0.094444446
+lines = ["『せいせきがあがりますよーに』", "『これからもけんこうでいられますよーに』", "『これからもみんなといっしょにいられますよーに』"]
+line_boxes = [[0.071875, 0.64166665, 0.57395834, 0.7361111], [0.077083334, 0.71666664, 0.74791664, 0.80833334], [0.075, 0.7902778, 0.88645834, 0.88611114]]
+item = false

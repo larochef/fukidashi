@@ -1,0 +1,28 @@
+# TM2: three choices without a place
+# From captures/1792868074139_playstation__TOKIMEKI_MEMORIAL_2.png
+frame = [1280, 960]
+
+[[block]]
+translation = "28 mars 1992 (samedi)"
+x0 = 0.052083332
+y0 = 0.12222222
+x1 = 0.39583334
+y1 = 0.19305556
+line_height = 0.07083333
+lines = ["1992年3月28日(土)"]
+line_boxes = [[0.052083332, 0.12222222, 0.39583334, 0.19305556]]
+item = false
+
+[[block]]
+translation = """
+“Tournesol”
+“Rose”
+“Violette”"""
+x0 = 0.06458333
+y0 = 0.63611114
+x1 = 0.26875
+y1 = 0.8875
+line_height = 0.104166664
+lines = ["『ひまわり』", "「バラ」", "『すみれ』"]
+line_boxes = [[0.067708336, 0.63611114, 0.26875, 0.74027777], [0.06458333, 0.7111111, 0.2, 0.81805557], [0.071875, 0.79444444, 0.22708334, 0.8875]]
+item = false

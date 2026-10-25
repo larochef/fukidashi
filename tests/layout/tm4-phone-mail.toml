@@ -1,0 +1,47 @@
+# Phone screens (TM4): mail, profile card, job ad
+# From captures/1792706398372_playstation_portable__Tokimeki_Memorial_4_JPN_PSP-Caravan.png
+frame = [1440, 810]
+
+[[block]]
+translation = "7 avril 2009 (mar)"
+x0 = 0.00625
+y0 = 0.0
+x1 = 0.328125
+y1 = 0.075925924
+line_height = 0.075925924
+lines = ["2009年4月7日（火）"]
+line_boxes = [[0.00625, 0.0, 0.328125, 0.075925924]]
+item = false
+
+[[block]]
+translation = "Fermer Calendrier"
+x0 = 0.8333333
+y0 = 0.13333334
+x1 = 0.940625
+y1 = 0.2851852
+line_height = 0.074074075
+lines = ["閉じ石", "カレンダー"]
+line_boxes = [[0.8333333, 0.13333334, 0.940625, 0.2074074], [0.834375, 0.22037037, 0.9375, 0.2851852]]
+item = false
+
+[[block]]
+translation = "Boîte de réception Okura/Appelle-moi quand tu veux"
+x0 = 0.14791666
+y0 = 0.17037037
+x1 = 0.49166667
+y1 = 0.29444444
+line_height = 0.074074075
+lines = ["メール受信BOX", "大 倉/気軽に電話して"]
+line_boxes = [[0.14791666, 0.17037037, 0.359375, 0.24444444], [0.14791666, 0.23148148, 0.49166667, 0.29444444]]
+item = false
+
+[[block]]
+translation = "Lisons l'e-mail de Miyako-chan."
+x0 = 0.017708333
+y0 = 0.91481483
+x1 = 0.42291668
+y1 = 0.9851852
+line_height = 0.07037037
+lines = ["都子からのメールを読もう"]
+line_boxes = [[0.017708333, 0.91481483, 0.42291668, 0.9851852]]
+item = false

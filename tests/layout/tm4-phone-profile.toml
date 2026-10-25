@@ -1,0 +1,75 @@
+# Phone screens (TM4): mail, profile card, job ad
+# From captures/1792708260165_playstation_portable__Tokimeki_Memorial_4_JPN_PSP-Caravan.png
+frame = [1440, 810]
+
+[[block]]
+translation = "7 avril 2009 (mar)"
+x0 = 0.0072916667
+y0 = 0.0
+x1 = 0.32708332
+y1 = 0.07037037
+line_height = 0.07037037
+lines = ["2009年4月7日（火）"]
+line_boxes = [[0.0072916667, 0.0, 0.32708332, 0.07037037]]
+item = false
+
+[[block]]
+translation = "Fermer"
+x0 = 0.834375
+y0 = 0.13518518
+x1 = 0.940625
+y1 = 0.20555556
+line_height = 0.07037037
+lines = ["閉七石"]
+line_boxes = [[0.834375, 0.13518518, 0.940625, 0.20555556]]
+item = false
+
+[[block]]
+translation = "Kobayashi Manabu"
+x0 = 0.15833333
+y0 = 0.18333334
+x1 = 0.26145834
+y1 = 0.26481482
+line_height = 0.08148148
+lines = ["小林学"]
+line_boxes = [[0.15833333, 0.18333334, 0.26145834, 0.26481482]]
+item = false
+
+[[block]]
+translation = "Calendrier"
+x0 = 0.834375
+y0 = 0.22037037
+x1 = 0.93854165
+y1 = 0.2851852
+line_height = 0.06481481
+lines = ["カレンダー"]
+line_boxes = [[0.834375, 0.22037037, 0.93854165, 0.2851852]]
+item = false
+
+[[block]]
+translation = """
+Kobayashi Manabu
+Né le 30 octobre
+Scorpion, type A
+Go-Home Club"""
+x0 = 0.15833333
+y0 = 0.27592593
+x1 = 0.371875
+y1 = 0.49814814
+line_height = 0.06666667
+lines = ["こばやしまなぶ", "10月30日生まれ", "蠍座A型", "帰宅部"]
+line_boxes = [[0.1625, 0.27592593, 0.371875, 0.33888888], [0.165625, 0.32777777, 0.37083334, 0.39259258], [0.15833333, 0.37962964, 0.29270834, 0.4462963], [0.159375, 0.43148148, 0.246875, 0.49814814]]
+item = false
+
+[[block]]
+translation = """
+Un type qui se croit tout permis.
+Il a l'air intelligent, mais il est pervers."""
+x0 = 0.16041666
+y0 = 0.6703704
+x1 = 0.559375
+y1 = 0.79444444
+line_height = 0.06851852
+lines = ["調子のいいヤツ。", "頭はいいみたいだけど、スケべ。"]
+line_boxes = [[0.16041666, 0.6703704, 0.36979166, 0.73888886], [0.16041666, 0.72962964, 0.559375, 0.79444444]]
+item = false

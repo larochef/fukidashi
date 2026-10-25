@@ -1,0 +1,14 @@
+# TM2: dialogue over three lines, kept as one text
+# From captures/1792867694769_playstation__TOKIMEKI_MEMORIAL_2.png
+frame = [2048, 960]
+
+[[block]]
+translation = "Aso: “Fufu, Hikari-chan dit qu'elle ne veut pas. Moi aussi, j'aimerais bien rentrer me changer une fois Alors...”"
+x0 = 0.067708336
+y0 = 0.67777777
+x1 = 0.728125
+y1 = 0.9177778
+line_height = 0.09111111
+lines = ["麻生「ふふ、光ちゃんは嫌だって。", "私も一度、帰って着替えたいし", "だから…"]
+line_boxes = [[0.067708336, 0.67777777, 0.67395836, 0.7688889], [0.19479166, 0.7511111, 0.728125, 0.84444445], [0.19791667, 0.8244445, 0.36145833, 0.9177778]]
+item = false

@@ -1,0 +1,36 @@
+# KimiKiss: bulleted choices in the dialogue box (one block per choice)
+# From captures/1792854519400_playstation2__KimiKiss__Japan_.png
+frame = [2560, 1792]
+
+[[block]]
+translation = "“Ce genre de pensée n'est pas très bonne.”"
+x0 = 0.09791667
+y0 = 0.6458333
+x1 = 0.5520833
+y1 = 0.7276786
+line_height = 0.08184524
+lines = ["そんな考え方はよくないよ"]
+line_boxes = [[0.09791667, 0.6458333, 0.5520833, 0.7276786]]
+item = true
+
+[[block]]
+translation = "“Si tu mourais, il y aurait des gens qui seraient tristes, non ?”"
+x0 = 0.09791667
+y0 = 0.74255955
+x1 = 0.6479167
+y1 = 0.82738096
+line_height = 0.084821425
+lines = ["死んだら、悲しむ人がいるだろ？"]
+line_boxes = [[0.09791667, 0.74255955, 0.6479167, 0.82738096]]
+item = true
+
+[[block]]
+translation = "“Ne me dis pas que tu essayais de te suicider ?”"
+x0 = 0.125
+y0 = 0.8407738
+x1 = 0.61145836
+y1 = 0.9255952
+line_height = 0.084821425
+lines = ["まさか、死のうとしてたの？"]
+line_boxes = [[0.125, 0.8407738, 0.61145836, 0.9255952]]
+item = true

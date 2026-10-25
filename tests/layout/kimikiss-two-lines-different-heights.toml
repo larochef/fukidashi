@@ -1,0 +1,25 @@
+# KimiKiss: two speakers read as two blocks, the second taller (？ and …)
+# From captures/1792882605252_playstation2__KimiKiss__Japan_.png
+frame = [2560, 1792]
+
+[[block]]
+translation = "Satonaka: “Appelez-moi Narumi.”"
+x0 = 0.0625
+y0 = 0.6473214
+x1 = 0.67083335
+y1 = 0.7291667
+line_height = 0.08184524
+lines = ["里仲「なるみって呼んでください」"]
+line_boxes = [[0.0625, 0.6473214, 0.67083335, 0.7291667]]
+item = false
+
+[[block]]
+translation = "Aihara: “Hein ? C’est un peu soudain comme demande...”"
+x0 = 0.055208333
+y0 = 0.73214287
+x1 = 0.6979167
+y1 = 0.83630955
+line_height = 0.104166664
+lines = ["相原「え？いきなりそれは…」"]
+line_boxes = [[0.055208333, 0.73214287, 0.6979167, 0.83630955]]
+item = false

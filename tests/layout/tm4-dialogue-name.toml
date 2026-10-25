@@ -1,0 +1,14 @@
+# TM4: name + 「」 on one line, then an anonymous speaker
+# From captures/1792704476108_playstation_portable__Tokimeki_Memorial_4_JPN_PSP-Caravan.png
+frame = [1440, 810]
+
+[[block]]
+translation = "Okura: “Ce n'est pas une relation toxique, on est childhood friends.”"
+x0 = 0.023958333
+y0 = 0.79444444
+x1 = 0.50625
+y1 = 0.94814813
+line_height = 0.094444446
+lines = ["大倉「くされ縁じゃなくって", "幼なじみ。」"]
+line_boxes = [[0.023958333, 0.79444444, 0.50625, 0.88148147], [0.15625, 0.8537037, 0.359375, 0.94814813]]
+item = false

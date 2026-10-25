@@ -1,0 +1,27 @@
+# KimiKiss: slanted "レベル⏎アップ!!" logo and a banner ending in ♡♪
+# From captures/1792854788048_playstation2__KimiKiss__Japan_.png
+frame = [2560, 1792]
+
+[[block]]
+translation = """
+Niveau
+UP !!"""
+x0 = 0.11354167
+y0 = 0.36755952
+x1 = 0.25104168
+y1 = 0.5
+line_height = 0.0952381
+lines = ["レベル", "アップ!!"]
+line_boxes = [[0.115625, 0.36755952, 0.21770833, 0.4375], [0.11354167, 0.4047619, 0.25104168, 0.5]]
+item = false
+
+[[block]]
+translation = "Augmente la jauge d'affection ! ♡♪"
+x0 = 0.34583333
+y0 = 0.46577382
+x1 = 0.74895835
+y1 = 0.53869045
+line_height = 0.072916664
+lines = ["好感度ゲージをあげよう！♡♪"]
+line_boxes = [[0.34583333, 0.46577382, 0.74895835, 0.53869045]]
+item = false

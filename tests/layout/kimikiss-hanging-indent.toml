@@ -1,0 +1,14 @@
+# KimiKiss: hanging indent under 相原（ (one sentence over two lines)
+# From captures/1792842889228_playstation2__KimiKiss__Japan_.png
+frame = [2560, 1792]
+
+[[block]]
+translation = "Aihara (...même si, ce n'est pas que j'ai un livre particulier que je veux lire...)"
+x0 = 0.0625
+y0 = 0.6458333
+x1 = 0.86145836
+y1 = 0.82738096
+line_height = 0.08184524
+lines = ["相　原（…と言っても、読みたい本がある訳じゃ", "ないんだよな…）"]
+line_boxes = [[0.0625, 0.6458333, 0.86145836, 0.7276786], [0.20416667, 0.7410714, 0.55104166, 0.82738096]]
+item = false

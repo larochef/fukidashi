@@ -1,0 +1,27 @@
+# KimiKiss: names spaced out (相　原「, 咲　野「), first characters read as a column
+# From captures/1792880486347_playstation2__KimiKiss__Japan_.png
+frame = [2560, 1792]
+
+[[block]]
+translation = "Art Moderne et Nature"
+x0 = 0.8645833
+y0 = 0.14583333
+x1 = 0.96458334
+y1 = 0.18005952
+line_height = 0.03422619
+lines = ["自然近代美術"]
+line_boxes = [[0.8645833, 0.14583333, 0.96458334, 0.18005952]]
+item = false
+
+[[block]]
+translation = """
+Aihara : « Hahaha »
+Sakino : « Après avoir mangé et pris mon bain, je m'écroule direct de fatigue »"""
+x0 = 0.0625
+y0 = 0.64285713
+x1 = 0.803125
+y1 = 0.93005955
+line_height = 0.08928572
+lines = ["相原「ははは」", "咲野「ご飯食べてお風呂入ったら、", "そのままバタンキューって感じ」"]
+line_boxes = [[0.0625, 0.64285713, 0.34791666, 0.7291667], [0.0625, 0.7410714, 0.65625, 0.83035713], [0.20416667, 0.8407738, 0.803125, 0.93005955]]
+item = false

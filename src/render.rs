@@ -2,6 +2,7 @@
 
 use ab_glyph::{Font, FontVec, GlyphId, PxScale, ScaleFont, point};
 use image::{DynamicImage, GenericImageView, Rgba, RgbaImage, imageops::FilterType};
+use serde::{Deserialize, Serialize};
 
 use crate::{
     config::{RenderConfig, Screen},
@@ -50,6 +51,24 @@ pub struct Layout {
     game_y: u32,
     game_width: u32,
     game_height: u32,
+}
+
+/// A screen's blocks as the OCR read them, with their translations: the input
+/// of the layout, saved by `replay --fixtures` for the layout tests
+/// (`tests/layout`).
+#[derive(Serialize, Deserialize)]
+pub struct Fixture {
+    /// Frame size, in pixels.
+    pub frame: [u32; 2],
+    #[serde(rename = "block")]
+    pub blocks: Vec<FixtureBlock>,
+}
+
+#[derive(Serialize, Deserialize)]
+pub struct FixtureBlock {
+    pub translation: String,
+    #[serde(flatten)]
+    pub block: Block,
 }
 
 /// Colours of one translation.
@@ -119,55 +138,10 @@ impl Renderer {
     /// The overlay of the game area alone.
     fn render_game(&self, frame: &DynamicImage, items: &[(&Block, &str)], ow: u32, oh: u32) -> RgbaImage {
         let mut img = RgbaImage::from_pixel(ow, oh, Rgba([0, 0, 0, 0]));
-        let (owf, ohf) = (ow as f32, oh as f32);
-        let pad = (owf / 240.0).max(2.0);
-        let bounds = Rect { x0: 0.0, y0: 0.0, x1: owf, y1: ohf };
-
-        // Japanese punctuation the translation kept, written with glyphs the font has.
-        let texts: Vec<String> = items.iter().map(|(_, t)| self.drawable(t)).collect();
-        let items: Vec<(&Block, &str)> = items.iter().zip(&texts).map(|((b, _), t)| (*b, t.as_str())).collect();
+        let Placement { anchors, sources, panels, pad } = self.place(items, ow, oh);
         // Colours come from the whole original block, so the lines of a list match.
-        let (items, colors): (Vec<(Block, &str, bool)>, Vec<Colors>) = items
-            .iter()
-            .filter(|(_, t)| !t.trim().is_empty())
-            .flat_map(|&(b, t)| {
-                let colors = self.colors(frame, b);
-                split_list(b, t).into_iter().map(move |item| (item, colors))
-            })
-            .unzip();
-        let anchors: Vec<Rect> = items
-            .iter()
-            .map(|(b, _, _)| {
-                let inset = b.line_height * ohf * MASK_INSET;
-                Rect {
-                    x0: b.x0 * owf + inset - pad,
-                    y0: b.y0 * ohf + inset,
-                    x1: b.x1 * owf - inset + pad,
-                    y1: b.y1 * ohf - inset,
-                }
-                .clamp_to(&bounds)
-            })
-            .collect();
-
-        let spaces: Vec<Rect> = (0..items.len()).map(|i| free_space(i, &anchors, &bounds)).collect();
-        // A screen crowded with labels (a map, a menu grid) reads better in a smaller font.
-        let label_cap = if items.len() > DENSE_ITEMS { owf / 40.0 } else { f32::MAX };
-        let fit_all = |caps: &[f32]| -> Vec<Panel> {
-            items
-                .iter()
-                .enumerate()
-                .map(|(i, (block, text, listed))| {
-                    let cap = if block.lines.len() == 1 { caps[i].min(label_cap) } else { caps[i] };
-                    Panel { index: i, ..self.fit(block, text, *listed, &anchors[i], &spaces[i], cap, ohf, pad, &bounds) }
-                })
-                .collect()
-        };
-        // Same-looking text gets the same size: each group of similar original glyph
-        // heights uses the smallest size any of its members needed.
-        let first = fit_all(&vec![f32::MAX; items.len()]);
-        let caps = harmonize(&items.iter().map(|(b, _, _)| b.line_height).collect::<Vec<_>>(), &first);
-        let mut panels = fit_all(&caps);
-        resolve_overlaps(&mut panels, &bounds);
+        let block_colors: Vec<Colors> = items.iter().map(|(b, _)| self.colors(frame, b)).collect();
+        let colors: Vec<Colors> = sources.iter().map(|&s| block_colors[s]).collect();
 
         for (anchor, colors) in anchors.iter().zip(&colors) {
             // The Japanese must not show through, even under a see-through backdrop.
@@ -200,6 +174,60 @@ impl Renderer {
         img
     }
 
+    /// Steps 1 to 3 of `render`, on a game area of `ow` x `oh` pixels: where the
+    /// Japanese is masked and where each translation goes, at which size.
+    fn place(&self, items: &[(&Block, &str)], ow: u32, oh: u32) -> Placement {
+        let (owf, ohf) = (ow as f32, oh as f32);
+        let pad = (owf / 240.0).max(2.0);
+        let bounds = Rect { x0: 0.0, y0: 0.0, x1: owf, y1: ohf };
+
+        // Japanese punctuation the translation kept, written with glyphs the font has.
+        let texts: Vec<String> = items.iter().map(|(_, t)| self.drawable(t)).collect();
+        let (items, sources): (Vec<(Block, &str, bool)>, Vec<usize>) = items
+            .iter()
+            .zip(&texts)
+            .enumerate()
+            .filter(|(_, (_, t))| !t.trim().is_empty())
+            .flat_map(|(source, ((b, _), t))| split_list(b, t).into_iter().map(move |item| (item, source)))
+            .unzip();
+        let anchors: Vec<Rect> = items
+            .iter()
+            .map(|(b, _, _)| {
+                let inset = b.line_height * ohf * MASK_INSET;
+                Rect {
+                    x0: b.x0 * owf + inset - pad,
+                    y0: b.y0 * ohf + inset,
+                    x1: b.x1 * owf - inset + pad,
+                    y1: b.y1 * ohf - inset,
+                }
+                .clamp_to(&bounds)
+            })
+            .collect();
+
+        let spaces: Vec<Rect> = (0..items.len()).map(|i| free_space(i, &anchors, &bounds)).collect();
+        // A screen crowded with labels (a map, a menu grid) reads better in a smaller font.
+        let label_cap = if items.len() > DENSE_ITEMS { owf / 40.0 } else { f32::MAX };
+        let fit_all = |caps: &[f32]| -> Vec<Panel> {
+            items
+                .iter()
+                .enumerate()
+                .map(|(i, (block, text, listed))| {
+                    let cap = if is_label(block, *listed) { caps[i].min(label_cap) } else { caps[i] };
+                    Panel { index: i, ..self.fit(block, text, *listed, &anchors[i], &spaces[i], cap, ohf, pad, &bounds) }
+                })
+                .collect()
+        };
+        // Same-looking text gets the same size: each group of similar original glyph
+        // heights uses the smallest size any of its members needed.
+        let first = fit_all(&vec![f32::MAX; items.len()]);
+        let heights: Vec<f32> = items.iter().map(|(b, _, _)| b.line_height).collect();
+        let labels: Vec<bool> = items.iter().map(|(b, _, listed)| is_label(b, *listed)).collect();
+        let caps = harmonize(&heights, &labels, &first);
+        let mut panels = fit_all(&caps);
+        resolve_overlaps(&mut panels, &bounds);
+        Placement { anchors, sources, panels, pad }
+    }
+
     /// Picks the largest font (and, at that size, the narrowest width starting
     /// from the original one) that fits the free space, then places the panel
     /// on the original box, starting where the original starts.
@@ -218,7 +246,7 @@ impl Renderer {
     ) -> Panel {
         let line_h = block.line_height * ohf;
         let min_size = bounds.w() * MIN_SIZE_RATIO;
-        let label = block.lines.len() == 1;
+        let label = is_label(block, listed);
         // OCR boxes are taller than the glyphs, and Latin letters look bigger than
         // kana at the same size: a label (often one of many on a dense screen)
         // matches the original at 70% of the box, running text at 85%.
@@ -366,7 +394,7 @@ impl Renderer {
                     latin.to_vec()
                 } else if let Some(w) = wide {
                     vec![w]
-                } else if self.glyph(c).1.0 != 0 {
+                } else if c == '\n' || self.glyph(c).1.0 != 0 {
                     vec![c]
                 } else {
                     vec![]
@@ -588,11 +616,11 @@ impl Rect {
 }
 
 /// A block translated line for line (a list, a menu) is laid out as one item
-/// per line, each on its original line; anything else stays one item. The
-/// flag tells which items come from such a list.
+/// per line, each on its original line; anything else (a speaker's line too)
+/// stays one item. The flag tells which items come from such a list.
 fn split_list<'a>(block: &Block, text: &'a str) -> Vec<(Block, &'a str, bool)> {
     let lines: Vec<&str> = text.lines().filter(|l| !l.trim().is_empty()).collect();
-    if block.lines.len() < 2 || lines.len() != block.lines.len() || block.line_boxes.len() != block.lines.len() {
+    if block.lines.len() < 2 || is_speech(block) || lines.len() != block.lines.len() || block.line_boxes.len() != block.lines.len() {
         return vec![(block.clone(), text, false)];
     }
     lines
@@ -612,6 +640,29 @@ fn split_list<'a>(block: &Block, text: &'a str) -> Vec<(Block, &'a str, bool)> {
             (line, translation, true)
         })
         .collect()
+}
+
+/// A short single line (a menu entry, a place, a date), as opposed to running
+/// text: a sentence on one line, like a speaker's line, is shown as dialogue.
+fn is_label(block: &Block, listed: bool) -> bool {
+    let [line] = block.lines.as_slice() else { return false };
+    listed || !(is_speech(block) || line.chars().filter(|c| !c.is_whitespace()).count() > 15)
+}
+
+/// A speaker's line (`Name「...`): its lines are one text, not a list.
+fn is_speech(block: &Block) -> bool {
+    block.lines.first().and_then(|l| l.find('「')).is_some_and(|i| i > 0)
+}
+
+/// The layout of a screen's translations, before drawing.
+struct Placement {
+    /// Box of each item's Japanese, which the overlay masks.
+    anchors: Vec<Rect>,
+    /// Index of the translation each item comes from (a list gives one item per line).
+    sources: Vec<usize>,
+    panels: Vec<Panel>,
+    /// Padding inside the panels, in pixels.
+    pad: f32,
 }
 
 /// A translation ready to draw: its backdrop and wrapped lines.
@@ -660,20 +711,26 @@ fn free_space(i: usize, anchors: &[Rect], bounds: &Rect) -> Rect {
 }
 
 /// Groups blocks whose original glyphs have similar heights (within 20%) and
-/// returns, for each block, the smallest font size fitted in its group.
-fn harmonize(line_heights: &[f32], fitted: &[Panel]) -> Vec<f32> {
-    let mut order: Vec<usize> = (0..line_heights.len()).collect();
-    order.sort_by(|&a, &b| line_heights[a].total_cmp(&line_heights[b]));
-    let mut caps = vec![f32::MAX; line_heights.len()];
-    let mut start = 0;
-    while start < order.len() {
-        let base = line_heights[order[start]];
-        let end = order[start..].iter().position(|&i| line_heights[i] > base * 1.2).map_or(order.len(), |p| start + p);
-        let size = order[start..end].iter().map(|&i| fitted[i].size).fold(f32::MAX, f32::min);
-        for &i in &order[start..end] {
-            caps[i] = size;
+/// returns, for each block, the smallest font size fitted in its group. Running
+/// text gets a wider margin (35%): ？ or … make a line's box taller, and the
+/// lines of one dialogue box, read as two blocks, must still match.
+fn harmonize(line_heights: &[f32], labels: &[bool], fitted: &[Panel]) -> Vec<f32> {
+    let mut caps: Vec<f32> = fitted.iter().map(|p| p.size).collect();
+    let all: Vec<usize> = (0..line_heights.len()).collect();
+    let text: Vec<usize> = all.iter().copied().filter(|&i| !labels[i]).collect();
+    for (members, tolerance) in [(all, 1.2), (text, 1.35)] {
+        let mut order = members;
+        order.sort_by(|&a, &b| line_heights[a].total_cmp(&line_heights[b]));
+        let mut start = 0;
+        while start < order.len() {
+            let base = line_heights[order[start]];
+            let end = order[start..].iter().position(|&i| line_heights[i] > base * tolerance).map_or(order.len(), |p| start + p);
+            let size = order[start..end].iter().map(|&i| caps[i]).fold(f32::MAX, f32::min);
+            for &i in &order[start..end] {
+                caps[i] = size;
+            }
+            start = end;
         }
-        start = end;
     }
     caps
 }
@@ -801,7 +858,8 @@ fn blend(dst: &mut Rgba<u8>, src: Rgba<u8>) {
 
 #[cfg(test)]
 mod tests {
-    use super::game_aspect;
+    use super::{Block, Fixture, Rect, Renderer, game_aspect};
+    use crate::config::RenderConfig;
 
     #[test]
     fn shows_frames_at_their_console_shape() {
@@ -818,4 +876,103 @@ mod tests {
         assert_eq!(shape(2560, 1792), 1.33); // PS2
         assert_eq!(shape(1920, 1000), 1.78);
     }
+
+    /// Layout regression tests: each case in `tests/layout` holds a screen's blocks
+    /// as the OCR read them, with their translations (`replay --fixtures DIR`
+    /// makes new ones from captures); the panels laid out for them must match
+    /// the `.expected` file next to it. After a deliberate change, check the
+    /// rendered screens, then rewrite the expected files with
+    /// `UPDATE_LAYOUT=1 cargo test layout`.
+    #[test]
+    fn layout_matches_the_reviewed_cases() {
+        let config: RenderConfig = toml::from_str(
+            "width = 1920\nbackground = [16, 16, 24, 240]\ntext_color = [255, 255, 255, 255]\nscreen_aspect = \"game\"",
+        )
+        .unwrap();
+        let renderer = Renderer::new(&config).unwrap();
+        let update = std::env::var_os("UPDATE_LAYOUT").is_some();
+        let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/layout");
+        let mut cases: Vec<_> = std::fs::read_dir(&dir).unwrap().map(|e| e.unwrap().path()).filter(|p| p.extension().is_some_and(|e| e == "toml")).collect();
+        cases.sort();
+        assert!(!cases.is_empty());
+
+        let mut failures = Vec::new();
+        for case in &cases {
+            let name = case.file_stem().unwrap().to_string_lossy();
+            let fixture: Fixture = toml::from_str(&std::fs::read_to_string(case).unwrap()).unwrap();
+            let layout = renderer.layout(fixture.frame[0], fixture.frame[1]);
+            let items: Vec<(&Block, &str)> = fixture.blocks.iter().map(|b| (&b.block, b.translation.as_str())).collect();
+            let placement = renderer.place(&items, layout.game_width, layout.game_height);
+
+            // Whatever the expected layout, panels stay on the game and apart.
+            let bounds = Rect { x0: 0.0, y0: 0.0, x1: layout.game_width as f32, y1: layout.game_height as f32 };
+            for (i, a) in placement.panels.iter().enumerate() {
+                let r = a.rect;
+                if r.x0 < -0.5 || r.y0 < -0.5 || r.x1 > bounds.x1 + 0.5 || r.y1 > bounds.y1 + 0.5 {
+                    failures.push(format!("{name}: panel {i} goes off the game: {r:?}"));
+                }
+                for (j, b) in placement.panels.iter().enumerate().skip(i + 1) {
+                    let (ox, oy) = r.overlap(&b.rect);
+                    if ox > 0.0 && oy > 0.0 {
+                        failures.push(format!("{name}: panels {i} and {j} overlap"));
+                    }
+                }
+            }
+
+            let actual = snapshot(&placement);
+            let expected_path = case.with_extension("expected");
+            if update {
+                std::fs::write(&expected_path, &actual).unwrap();
+                continue;
+            }
+            let Ok(expected) = std::fs::read_to_string(&expected_path) else {
+                failures.push(format!("{name}: no {name}.expected yet"));
+                continue;
+            };
+            if actual != expected {
+                let diff: Vec<String> = expected
+                    .lines()
+                    .map(Some)
+                    .chain(std::iter::repeat(None))
+                    .zip(actual.lines().map(Some).chain(std::iter::repeat(None)))
+                    .take_while(|(e, a)| e.is_some() || a.is_some())
+                    .filter(|(e, a)| e != a)
+                    .map(|(e, a)| format!("  - {}\n  + {}", e.unwrap_or(""), a.unwrap_or("")))
+                    .collect();
+                failures.push(format!("{name}: layout changed\n{}", diff.join("\n")));
+            }
+        }
+        assert!(failures.is_empty(), "{}\n(UPDATE_LAYOUT=1 cargo test layout accepts the new layout)", failures.join("\n"));
+    }
+
+    /// The panels of a screen as text: box in pixels of the game area, font
+    /// size, alignment and wrapped lines.
+    fn snapshot(placement: &super::Placement) -> String {
+        let mut out = String::new();
+        for panel in &placement.panels {
+            let r = panel.rect;
+            let align = if panel.centered { " centered" } else { "" };
+            out += &format!(
+                "[{}] {:.0},{:.0} {:.0}x{:.0} size {:.1}{align}\n",
+                placement.sources[panel.index],
+                r.x0,
+                r.y0,
+                r.w(),
+                r.h(),
+                panel.size
+            );
+            for line in &panel.lines {
+                out += &format!("    {line}\n");
+            }
+        }
+        out
+    }
+
+    #[test]
+    fn keeps_line_breaks() {
+        let config: RenderConfig = toml::from_str("width = 1920\nbackground = [0, 0, 0, 255]\ntext_color = [255, 255, 255, 255]").unwrap();
+        let renderer = Renderer::new(&config).unwrap();
+        assert_eq!(renderer.drawable("Oui !\n「Mange」。"), "Oui !\n“Mange”. ");
+    }
 }
+

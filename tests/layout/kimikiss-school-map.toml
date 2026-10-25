@@ -1,0 +1,256 @@
+# KimiKiss school map (4:3, black bars on a 16:9 screen)
+# From captures/1792840169412_playstation2__KimiKiss__Japan_.png
+frame = [2560, 1792]
+
+[[block]]
+translation = "2 mar."
+x0 = 0.010416667
+y0 = 0.007440476
+x1 = 0.24791667
+y1 = 0.15178572
+line_height = 0.14434524
+lines = ["2 日m(火)"]
+line_boxes = [[0.010416667, 0.007440476, 0.24791667, 0.15178572]]
+item = false
+
+[[block]]
+translation = "Indice"
+x0 = 0.853125
+y0 = 0.03422619
+x1 = 0.9447917
+y1 = 0.104166664
+line_height = 0.06994048
+lines = ["ヒンン"]
+line_boxes = [[0.853125, 0.03422619, 0.9447917, 0.104166664]]
+item = false
+
+[[block]]
+translation = "Gymnase"
+x0 = 0.40833333
+y0 = 0.04761905
+x1 = 0.540625
+y1 = 0.12946428
+line_height = 0.08184524
+lines = ["体育館"]
+line_boxes = [[0.40833333, 0.04761905, 0.540625, 0.12946428]]
+item = false
+
+[[block]]
+translation = "Paramètres"
+x0 = 0.8229167
+y0 = 0.08928572
+x1 = 0.9
+y1 = 0.16071428
+line_height = 0.071428575
+lines = ["設定"]
+line_boxes = [[0.8229167, 0.08928572, 0.9, 0.16071428]]
+item = false
+
+[[block]]
+translation = "Bibliothèque"
+x0 = 0.5364583
+y0 = 0.1279762
+x1 = 0.6333333
+y1 = 0.21279761
+line_height = 0.084821425
+lines = ["図書"]
+line_boxes = [[0.5364583, 0.1279762, 0.6333333, 0.21279761]]
+item = false
+
+[[block]]
+translation = "Valider"
+x0 = 0.88854164
+y0 = 0.14880952
+x1 = 0.97083336
+y1 = 0.22470239
+line_height = 0.07589286
+lines = ["決定"]
+line_boxes = [[0.88854164, 0.14880952, 0.97083336, 0.22470239]]
+item = false
+
+[[block]]
+translation = "3e"
+x0 = 0.6614583
+y0 = 0.19791667
+x1 = 0.76458335
+y1 = 0.28869048
+line_height = 0.090773806
+lines = ["3年"]
+line_boxes = [[0.6614583, 0.19791667, 0.76458335, 0.28869048]]
+item = false
+
+[[block]]
+translation = "Retour"
+x0 = 0.86354166
+y0 = 0.20535715
+x1 = 0.94375
+y1 = 0.28125
+line_height = 0.07589286
+lines = ["戻る"]
+line_boxes = [[0.86354166, 0.20535715, 0.94375, 0.28125]]
+item = false
+
+[[block]]
+translation = "Toit"
+x0 = 0.36354166
+y0 = 0.26636904
+x1 = 0.47916666
+y1 = 0.36011904
+line_height = 0.09375
+lines = ["屋上"]
+line_boxes = [[0.36354166, 0.26636904, 0.47916666, 0.36011904]]
+item = false
+
+[[block]]
+translation = "2e"
+x0 = 0.77916664
+y0 = 0.28869048
+x1 = 0.8822917
+y1 = 0.3794643
+line_height = 0.090773806
+lines = ["2年"]
+line_boxes = [[0.77916664, 0.28869048, 0.8822917, 0.3794643]]
+item = false
+
+[[block]]
+translation = "Musique"
+x0 = 0.17708333
+y0 = 0.33333334
+x1 = 0.28333333
+y1 = 0.42261904
+line_height = 0.08928572
+lines = ["音楽"]
+line_boxes = [[0.17708333, 0.33333334, 0.28333333, 0.42261904]]
+item = false
+
+[[block]]
+translation = "1re ?"
+x0 = 0.40208334
+y0 = 0.3497024
+x1 = 0.6
+y1 = 0.4702381
+line_height = 0.12053572
+lines = ["1年？"]
+line_boxes = [[0.40208334, 0.3497024, 0.6, 0.4702381]]
+item = false
+
+[[block]]
+translation = "Home Ec"
+x0 = 0.6510417
+y0 = 0.38988096
+x1 = 0.75
+y1 = 0.4747024
+line_height = 0.084821425
+lines = ["家庭"]
+line_boxes = [[0.6510417, 0.38988096, 0.75, 0.4747024]]
+item = false
+
+[[block]]
+translation = "Parterre de fleurs"
+x0 = 0.79791665
+y0 = 0.4747024
+x1 = 0.9
+y1 = 0.5610119
+line_height = 0.08630952
+lines = ["花壇"]
+line_boxes = [[0.79791665, 0.4747024, 0.9, 0.5610119]]
+item = false
+
+[[block]]
+translation = "Science"
+x0 = 0.29895833
+y0 = 0.47767857
+x1 = 0.40208334
+y1 = 0.5654762
+line_height = 0.08779762
+lines = ["理科"]
+line_boxes = [[0.29895833, 0.47767857, 0.40208334, 0.5654762]]
+item = false
+
+[[block]]
+translation = "Cour de récréation"
+x0 = 0.119791664
+y0 = 0.48660713
+x1 = 0.22083333
+y1 = 0.5714286
+line_height = 0.084821425
+lines = ["校庭"]
+line_boxes = [[0.119791664, 0.48660713, 0.22083333, 0.5714286]]
+item = false
+
+[[block]]
+translation = "Infirmerie"
+x0 = 0.5989583
+y0 = 0.5223214
+x1 = 0.696875
+y1 = 0.60714287
+line_height = 0.084821425
+lines = ["保健"]
+line_boxes = [[0.5989583, 0.5223214, 0.696875, 0.60714287]]
+item = false
+
+[[block]]
+translation = "Cafétéria"
+x0 = 0.37395832
+y0 = 0.5625
+x1 = 0.471875
+y1 = 0.6473214
+line_height = 0.084821425
+lines = ["食堂"]
+line_boxes = [[0.37395832, 0.5625, 0.471875, 0.6473214]]
+item = false
+
+[[block]]
+translation = "Pause 1"
+x0 = 0.033333335
+y0 = 0.625
+x1 = 0.12916666
+y1 = 0.69345236
+line_height = 0.06845238
+lines = ["休み1"]
+line_boxes = [[0.033333335, 0.625, 0.12916666, 0.69345236]]
+item = false
+
+[[block]]
+translation = "Pause 2"
+x0 = 0.20625
+y0 = 0.6458333
+x1 = 0.30520833
+y1 = 0.71279764
+line_height = 0.06696428
+lines = ["休み2"]
+line_boxes = [[0.20625, 0.6458333, 0.30520833, 0.71279764]]
+item = false
+
+[[block]]
+translation = "Pause déjeuner"
+x0 = 0.032291666
+y0 = 0.7782738
+x1 = 0.13541667
+y1 = 0.8452381
+line_height = 0.06696428
+lines = ["昼休み"]
+line_boxes = [[0.032291666, 0.7782738, 0.13541667, 0.8452381]]
+item = false
+
+[[block]]
+translation = "Après les cours"
+x0 = 0.19479166
+y0 = 0.8035714
+x1 = 0.31041667
+y1 = 0.8660714
+line_height = 0.0625
+lines = ["放課後"]
+line_boxes = [[0.19479166, 0.8035714, 0.31041667, 0.8660714]]
+item = false
+
+[[block]]
+translation = "Couloir 1re"
+x0 = 0.690625
+y0 = 0.8407738
+x1 = 0.8541667
+y1 = 0.9166667
+line_height = 0.07589286
+lines = ["1年廊下"]
+line_boxes = [[0.690625, 0.8407738, 0.8541667, 0.9166667]]
+item = false

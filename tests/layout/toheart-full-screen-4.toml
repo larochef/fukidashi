@@ -1,0 +1,17 @@
+# Full-screen text (ToHeart): narration paragraphs and dialogue mixed
+# From captures/1792785737540_playstation_portable__ToHeart_PORTABLE__Japan_.png
+frame = [1440, 810]
+
+[[block]]
+translation = """
+“Je ne sais pas. Je ne t'ai jamais vu, et c'est la première fois que je t'entends et que je te vois. Kurusugawa ? C'est un nom plutôt rare, hein.”
+“Ahahaha ! L'ignorance est un péché, Hiro !”
+Un individu bruyant s'est interposé."""
+x0 = 0.0
+y0 = 0.05925926
+x1 = 0.925
+y1 = 0.55925924
+line_height = 0.098148145
+lines = ["「知らん。会ったこともなけりゃ、聞くのも見", "たのも初めてだ。くるすがわ？なんだか珍し", "い名前だなぁ」", "「あーっはっは！無知は罪なりよのヒロ！」", "うるさいのが割って入ってきた。"]
+line_boxes = [[0.054166667, 0.05925926, 0.925, 0.16481481], [0.0, 0.16296296, 0.91875, 0.2611111], [0.033333335, 0.26481482, 0.32083333, 0.36296296], [0.05, 0.35555556, 0.9010417, 0.47777778], [0.063541666, 0.46851853, 0.778125, 0.55925924]]
+item = false

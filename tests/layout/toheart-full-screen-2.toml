@@ -1,0 +1,36 @@
+# Full-screen text (ToHeart): narration paragraphs and dialogue mixed
+# From captures/1792785051861_playstation_portable__ToHeart_PORTABLE__Japan_.png
+frame = [1440, 810]
+
+[[block]]
+translation = "En jetant un coup d'œil, je remarquai que de fins grains de sable s'accrochaient par intermittence à sa jupe."
+x0 = 0.034375
+y0 = 0.06111111
+x1 = 0.925
+y1 = 0.2611111
+line_height = 0.1037037
+lines = ["ふと見ると、彼女のスカートにチラチラと細", "かい砂がついていた。"]
+line_boxes = [[0.077083334, 0.06111111, 0.925, 0.16481481], [0.034375, 0.16481481, 0.44270834, 0.2611111]]
+item = false
+
+[[block]]
+translation = "“Ah, c'est sale, là.”"
+x0 = 0.045833334
+y0 = 0.24814814
+x1 = 0.59166664
+y1 = 0.37962964
+line_height = 0.13148148
+lines = ["「あ、そこ、汚れてるぜ」"]
+line_boxes = [[0.045833334, 0.24814814, 0.59166664, 0.37962964]]
+item = false
+
+[[block]]
+translation = "Quand je pointai du doigt, la jeune fille jeta un regard furtif vers l'endroit, mais sans chercher particulièrement à l'enlever, elle détourna les yeux."
+x0 = 0.03125
+y0 = 0.3611111
+x1 = 0.92083335
+y1 = 0.7648148
+line_height = 0.1037037
+lines = ["オレが指差すと、", "女生徒はチうッとそれを見たものの、とくに", "払おうともせず、また視線を戻した。"]
+line_boxes = [[0.07604167, 0.3611111, 0.40208334, 0.4648148], [0.07083333, 0.5611111, 0.92083335, 0.66481483], [0.03125, 0.66481483, 0.7895833, 0.7648148]]
+item = false

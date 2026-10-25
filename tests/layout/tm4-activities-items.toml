@@ -1,0 +1,278 @@
+# TM4 activity selection, and its item variant
+# From captures/1792709517150_playstation_portable__Tokimeki_Memorial_4_JPN_PSP-Caravan.png
+frame = [1440, 810]
+
+[[block]]
+translation = "7 avril 2009"
+x0 = 0.009375
+y0 = 0.0
+x1 = 0.25104168
+y1 = 0.06851852
+line_height = 0.06851852
+lines = ["2009年4月7日"]
+line_boxes = [[0.009375, 0.0, 0.25104168, 0.06851852]]
+item = false
+
+[[block]]
+translation = "Repos"
+x0 = 0.28854167
+y0 = 0.018518519
+x1 = 0.36354166
+y1 = 0.1
+line_height = 0.08148148
+lines = ["懐養"]
+line_boxes = [[0.28854167, 0.018518519, 0.36354166, 0.1]]
+item = false
+
+[[block]]
+translation = "Rejoindre un club"
+x0 = 0.121875
+y0 = 0.07777778
+x1 = 0.26041666
+y1 = 0.1574074
+line_height = 0.07962963
+lines = ["入部する"]
+line_boxes = [[0.121875, 0.07777778, 0.26041666, 0.1574074]]
+item = false
+
+[[block]]
+translation = "Téléphone portable"
+x0 = 0.8364583
+y0 = 0.13703704
+x1 = 0.93958336
+y1 = 0.20185184
+line_height = 0.06481481
+lines = ["携帯電話"]
+line_boxes = [[0.8364583, 0.13703704, 0.93958336, 0.20185184]]
+item = false
+
+[[block]]
+translation = "Système"
+x0 = 0.35416666
+y0 = 0.1388889
+x1 = 0.48854166
+y1 = 0.22407408
+line_height = 0.085185185
+lines = ["システム"]
+line_boxes = [[0.35416666, 0.1388889, 0.48854166, 0.22407408]]
+item = false
+
+[[block]]
+translation = "Calendrier"
+x0 = 0.8354167
+y0 = 0.22037037
+x1 = 0.94166666
+y1 = 0.2851852
+line_height = 0.06481481
+lines = ["カレンダー"]
+line_boxes = [[0.8354167, 0.22037037, 0.94166666, 0.2851852]]
+item = false
+
+[[block]]
+translation = "Sport"
+x0 = 0.083333336
+y0 = 0.23148148
+x1 = 0.16145833
+y1 = 0.3148148
+line_height = 0.083333336
+lines = ["運動"]
+line_boxes = [[0.083333336, 0.23148148, 0.16145833, 0.3148148]]
+item = false
+
+[[block]]
+translation = "Décider"
+x0 = 0.509375
+y0 = 0.28703704
+x1 = 0.56875
+y1 = 0.35555556
+line_height = 0.06851852
+lines = ["決定"]
+line_boxes = [[0.509375, 0.28703704, 0.56875, 0.35555556]]
+item = false
+
+[[block]]
+translation = "Objet"
+x0 = 0.60625
+y0 = 0.34074074
+x1 = 0.7375
+y1 = 0.42592594
+line_height = 0.085185185
+lines = ["アイテム"]
+line_boxes = [[0.60625, 0.34074074, 0.7375, 0.42592594]]
+item = false
+
+[[block]]
+translation = "Préparation"
+x0 = 0.459375
+y0 = 0.34444445
+x1 = 0.56354165
+y1 = 0.43148148
+line_height = 0.087037034
+lines = ["身支度"]
+line_boxes = [[0.459375, 0.34444445, 0.56354165, 0.43148148]]
+item = false
+
+[[block]]
+translation = "Spécial"
+x0 = 0.8822917
+y0 = 0.34814814
+x1 = 0.95208335
+y1 = 0.41111112
+line_height = 0.062962964
+lines = ["特投"]
+line_boxes = [[0.8822917, 0.34814814, 0.95208335, 0.41111112]]
+item = false
+
+[[block]]
+translation = "Apparence"
+x0 = 0.08229167
+y0 = 0.44074073
+x1 = 0.16354166
+y1 = 0.5314815
+line_height = 0.09074074
+lines = ["容姿"]
+line_boxes = [[0.08229167, 0.44074073, 0.16354166, 0.5314815]]
+item = false
+
+[[block]]
+translation = "Lettres"
+x0 = 0.38229167
+y0 = 0.51296294
+x1 = 0.459375
+y1 = 0.6037037
+line_height = 0.09074074
+lines = ["文系"]
+line_boxes = [[0.38229167, 0.51296294, 0.459375, 0.6037037]]
+item = false
+
+[[block]]
+translation = "Arts"
+x0 = 0.16770834
+y0 = 0.5925926
+x1 = 0.24791667
+y1 = 0.67777777
+line_height = 0.085185185
+lines = ["芸術"]
+line_boxes = [[0.16770834, 0.5925926, 0.24791667, 0.67777777]]
+item = false
+
+[[block]]
+translation = "Sciences"
+x0 = 0.28125
+y0 = 0.6203704
+x1 = 0.35520834
+y1 = 0.7
+line_height = 0.07962963
+lines = ["理系"]
+line_boxes = [[0.28125, 0.6203704, 0.35520834, 0.7]]
+item = false
+
+[[block]]
+translation = "Riche"
+x0 = 0.65729165
+y0 = 0.75185186
+x1 = 0.725
+y1 = 0.8055556
+line_height = 0.053703703
+lines = ["リッチ"]
+line_boxes = [[0.65729165, 0.75185186, 0.725, 0.8055556]]
+item = false
+
+[[block]]
+translation = "Normal"
+x0 = 0.82708335
+y0 = 0.79444444
+x1 = 0.8989583
+y1 = 0.85925925
+line_height = 0.06481481
+lines = ["ふつう"]
+line_boxes = [[0.82708335, 0.79444444, 0.8989583, 0.85925925]]
+item = false
+
+[[block]]
+translation = "Santé"
+x0 = 0.027083334
+y0 = 0.83148146
+x1 = 0.1
+y1 = 0.90925926
+line_height = 0.07777778
+lines = ["体調"]
+line_boxes = [[0.027083334, 0.83148146, 0.1, 0.90925926]]
+item = false
+
+[[block]]
+translation = "Sport"
+x0 = 0.51145834
+y0 = 0.837037
+x1 = 0.5708333
+y1 = 0.90185183
+line_height = 0.06481481
+lines = ["運動"]
+line_boxes = [[0.51145834, 0.837037, 0.5708333, 0.90185183]]
+item = false
+
+[[block]]
+translation = "Lettres"
+x0 = 0.203125
+y0 = 0.8388889
+x1 = 0.25833333
+y1 = 0.9
+line_height = 0.06111111
+lines = ["文系"]
+line_boxes = [[0.203125, 0.8388889, 0.25833333, 0.9]]
+item = false
+
+[[block]]
+translation = "Volonté"
+x0 = 0.5885417
+y0 = 0.8388889
+x1 = 0.6458333
+y1 = 0.9037037
+line_height = 0.06481481
+lines = ["根性"]
+line_boxes = [[0.5885417, 0.8388889, 0.6458333, 0.9037037]]
+item = false
+
+[[block]]
+translation = "Sciences"
+x0 = 0.28229168
+y0 = 0.84074074
+x1 = 0.334375
+y1 = 0.9
+line_height = 0.05925926
+lines = ["理系"]
+line_boxes = [[0.28229168, 0.84074074, 0.334375, 0.9]]
+item = false
+
+[[block]]
+translation = "Arts"
+x0 = 0.35833332
+y0 = 0.84444445
+x1 = 0.415625
+y1 = 0.8981481
+line_height = 0.053703703
+lines = ["芸術"]
+line_boxes = [[0.35833332, 0.84444445, 0.415625, 0.8981481]]
+item = false
+
+[[block]]
+translation = "Apparence"
+x0 = 0.43333334
+y0 = 0.8462963
+x1 = 0.48854166
+y1 = 0.8981481
+line_height = 0.05185185
+lines = ["容姿"]
+line_boxes = [[0.43333334, 0.8462963, 0.48854166, 0.8981481]]
+item = false
+
+[[block]]
+translation = "Équipons ou utilisons des objets, et vérifions les compétences spéciales."
+x0 = 0.15625
+y0 = 0.9111111
+x1 = 0.83125
+y1 = 0.98703706
+line_height = 0.075925924
+lines = ["アイテムの装備・使用、特技の確認をしよう"]
+line_boxes = [[0.15625, 0.9111111, 0.83125, 0.98703706]]
+item = false

@@ -1,0 +1,25 @@
+# KimiKiss: name boxes off the line (相 taller, 咲野 read as 咲里)
+# From captures/1792880538187_playstation2__KimiKiss__Japan_.png
+frame = [2560, 1792]
+
+[[block]]
+translation = "Art Moderne et Nature"
+x0 = 0.8645833
+y0 = 0.14583333
+x1 = 0.96458334
+y1 = 0.18005952
+line_height = 0.03422619
+lines = ["自然近代美術"]
+line_boxes = [[0.8645833, 0.14583333, 0.96458334, 0.18005952]]
+item = false
+
+[[block]]
+translation = "Sakino : « Il faut manger de la viande, du poisson et des légumes de façon équilibrée, n'est-ce pas ? »"
+x0 = 0.065625
+y0 = 0.6443452
+x1 = 0.82708335
+y1 = 0.83630955
+line_height = 0.084821425
+lines = ["咲野「お肉も、魚も、野菜も、バランスよく", "摂らないとね」"]
+line_boxes = [[0.065625, 0.6443452, 0.82708335, 0.7291667], [0.203125, 0.7395833, 0.51979166, 0.83630955]]
+item = false

@@ -14,10 +14,12 @@ use oar_ocr::{
     processors::LimitType,
 };
 
+use serde::{Deserialize, Serialize};
+
 use crate::config::OcrConfig;
 
 /// One block of text, with its box normalized to 0..1 of the frame.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Block {
     pub x0: f32,
     pub y0: f32,
@@ -134,7 +136,7 @@ async fn recognize(engine: Arc<OAROCR>, config: &OcrConfig, image: DynamicImage)
         .collect();
     tracing::debug!(?lines, "ocr lines");
 
-    Ok(group(join_rows(drop_furigana(lines)))
+    Ok(group(join_rows(split_columns(drop_furigana(lines))))
         .into_iter()
         .flat_map(|rows| split_items(rows, &gray))
         .map(|(rows, item)| to_block(&rows, width, height, item))
@@ -159,6 +161,35 @@ fn drop_furigana(lines: Vec<Line>) -> Vec<Line> {
     lines.into_iter().zip(keep).filter_map(|(l, k)| k.then_some(l)).collect()
 }
 
+/// Splits a column of single characters read as one vertical line: the first
+/// characters of names spaced over the width of a line (相　原「…⏎咲　野「…
+/// read as 相咲, 原「…, 野「…). Each character goes back to the row on its right
+/// at its height, as many rows as characters.
+fn split_columns(lines: Vec<Line>) -> Vec<Line> {
+    let mut out = Vec::new();
+    for line in &lines {
+        let chars: Vec<char> = line.text.chars().collect();
+        let (w, h) = (line.x1 - line.x0, line.height());
+        let rows: Vec<&Line> = lines
+            .iter()
+            .filter(|r| {
+                let cy = (r.y0 + r.y1) / 2.0;
+                r.x0 > line.x1 - 0.2 * w && r.x0 - line.x1 < 2.0 * r.height() && (line.y0..line.y1).contains(&cy)
+            })
+            .collect();
+        if chars.len() < 2 || h < 1.6 * w || rows.len() != chars.len() {
+            out.push(line.clone());
+            continue;
+        }
+        let step = h / chars.len() as f32;
+        for (i, c) in chars.into_iter().enumerate() {
+            let (y0, y1) = (line.y0 + i as f32 * step, line.y0 + (i + 1) as f32 * step);
+            out.push(Line { x0: line.x0, y0, x1: line.x1, y1, text: c.to_string() });
+        }
+    }
+    out
+}
+
 /// Joins fragments of the same visual line (detection often splits a line at
 /// punctuation or wide gaps).
 fn join_rows(mut lines: Vec<Line>) -> Vec<Line> {
@@ -166,16 +197,30 @@ fn join_rows(mut lines: Vec<Line>) -> Vec<Line> {
     let mut rows: Vec<Line> = Vec::new();
     for line in lines {
         let h = line.height();
+        // A speaker's name is spaced out, away from its 「 (柊　「…, 相　原「…), and
+        // read in boxes of their own, a little off the line, sometimes
+        // overlapping it: then the overlapped characters are read twice
+        // (相原 + 原「…), or garbled (咲里 + 野「…).
+        let is_name = |row: &Line| row.text.chars().count() <= 2 && line.text.chars().take(2).any(|c| c == '「');
         let same_row = rows.iter_mut().find(|row| {
+            let name = is_name(row);
             let overlap = line.y1.min(row.y1) - line.y0.max(row.y0);
             let gap = line.x0 - row.x1;
             let ratio = h / row.height();
             // Menu entries laid out on one row are further apart than fragments of a
             // sentence, except after ？ or ！, which a full-width space follows.
-            let max_gap = if row.text.ends_with(['？', '！', '?', '!']) { 1.2 * h } else { 0.35 * h };
-            overlap > 0.6 * h.min(row.height()) && (0.8..=1.25).contains(&ratio) && gap < max_gap && gap > -0.5 * h
+            let max_gap = if row.text.ends_with(['？', '！', '?', '!']) || name { 1.2 * h } else { 0.35 * h };
+            let (min_gap, ratios) = if name { (-(row.x1 - row.x0), 0.6..=1.6) } else { (-0.5 * h, 0.8..=1.25) };
+            overlap > 0.6 * h.min(row.height()) && ratios.contains(&ratio) && gap < max_gap && gap > min_gap
         });
         match same_row {
+            Some(row) if is_name(row) => {
+                let chars = row.text.chars().count();
+                let overlapped = ((row.x1 - line.x0).max(0.0) / ((row.x1 - row.x0) / chars as f32)).round() as usize;
+                row.text = row.text.chars().take(chars - overlapped.min(chars)).chain(line.text.chars()).collect();
+                // The line's own box: the name's may stick out above or below it.
+                (row.x1, row.y0, row.y1) = (line.x1, line.y0, line.y1);
+            }
             Some(row) => {
                 row.text.push_str(&line.text);
                 row.x1 = row.x1.max(line.x1);
@@ -465,7 +510,7 @@ fn merge_stacked(mut blocks: Vec<Block>) -> Vec<Block> {
 mod tests {
     use image::{GrayImage, Luma};
 
-    use super::{Block, Line, drop_furigana, fix_ra_read_as_five, merge_continued, split_items, to_japanese_forms};
+    use super::{Block, Line, drop_furigana, fix_ra_read_as_five, join_rows, merge_continued, split_columns, split_items, to_japanese_forms};
 
     fn fix(lines: &[&str]) -> Vec<String> {
         let mut lines: Vec<String> = lines.iter().map(|l| l.to_string()).collect();
@@ -479,6 +524,34 @@ mod tests {
 
     fn block(x0: f32, y0: f32, x1: f32, y1: f32, text: &str) -> Block {
         Block { x0, y0, x1, y1, line_height: y1 - y0, lines: vec![text.into()], line_boxes: vec![[x0, y0, x1, y1]], item: false }
+    }
+
+    #[test]
+    fn keeps_spaced_out_speaker_names() {
+        let rows = |lines: Vec<Line>| -> Vec<String> { join_rows(split_columns(lines)).into_iter().map(|l| l.text).collect() };
+        // KimiKiss: 相　原「…⏎咲　野「…, whose first characters are read as one column.
+        let column = vec![
+            line(60.0, 434.0, 112.0, 555.0, "相咲"),
+            line(124.0, 432.0, 334.0, 490.0, "原「ははは」"),
+            line(125.0, 498.0, 630.0, 558.0, "野「ご飯食べて"),
+        ];
+        assert_eq!(rows(column), ["相原「ははは」", "咲野「ご飯食べて"]);
+        // 柊　「…: a one-character name far from its line.
+        let apart = vec![line(96.0, 569.0, 144.0, 617.0, "柊"), line(180.0, 566.0, 771.0, 622.0, "「まさか。」")];
+        assert_eq!(rows(apart), ["柊「まさか。」"]);
+        // Boxes overlapping the line: 原 read twice, 野 read as 里, 柊 boxed with the space.
+        let twice = vec![line(58.0, 561.0, 157.0, 622.0, "相原"), line(123.0, 566.0, 629.0, 621.0, "原「今日も」")];
+        assert_eq!(rows(twice), ["相原「今日も」"]);
+        let garbled = vec![line(63.0, 436.0, 154.0, 486.0, "咲里"), line(123.0, 433.0, 436.0, 490.0, "野「お肉も、")];
+        assert_eq!(rows(garbled), ["咲野「お肉も、"]);
+        let wide = vec![line(92.0, 500.0, 204.0, 555.0, "柊"), line(175.0, 499.0, 816.0, 557.0, "「俺に」")];
+        assert_eq!(rows(wide), ["柊「俺に」"]);
+        // A name's box off the line, taller than it.
+        let off = vec![line(66.0, 438.0, 109.0, 492.0, "咲"), line(124.0, 433.0, 440.0, 492.0, "野「うん」"), line(62.0, 468.0, 108.0, 553.0, "相"), line(125.0, 499.0, 634.0, 558.0, "原「ずいぶん」")];
+        assert_eq!(rows(off), ["相原「ずいぶん」", "咲野「うん」"]);
+        // Menu entries on one row stay apart.
+        let menu = vec![line(100.0, 100.0, 148.0, 148.0, "決定"), line(184.0, 100.0, 280.0, 148.0, "戻る")];
+        assert_eq!(rows(menu).len(), 2);
     }
 
     #[test]

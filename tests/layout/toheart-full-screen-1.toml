@@ -1,0 +1,18 @@
+# Full-screen text (ToHeart): narration paragraphs and dialogue mixed
+# From captures/1792771357284_playstation_portable__ToHeart_PORTABLE__Japan_.png
+frame = [1440, 810]
+
+[[block]]
+translation = """
+La lumière éclatante du matin s'infiltre et baigne la pièce de clarté.
+C'était une matinée ensoleillée et très agréable.
+Je sentais la chaleur du soleil à travers ma couette,
+et j'ai penché la tête pour regarder l'horloge."""
+x0 = 0.03125
+y0 = 0.06111111
+x1 = 0.9270833
+y1 = 0.66851854
+line_height = 0.107407406
+lines = ["眩しい朝の光が射し込んで、部屋を明るく染", "める。", "よく晴れた気持ちのいい朝だった。", "ふとんごしに陽射しのぬくもりが伝わってく", "頭を傾けて、時計を見た。"]
+line_boxes = [[0.07604167, 0.06111111, 0.9270833, 0.16666667], [0.03125, 0.16111112, 0.14895834, 0.2685185], [0.08125, 0.26296297, 0.73125, 0.36481482], [0.07395833, 0.35555556, 0.9270833, 0.46851853], [0.071875, 0.5574074, 0.625, 0.66851854]]
+item = false
