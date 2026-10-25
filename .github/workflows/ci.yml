@@ -1,0 +1,54 @@
+# Every push and pull request: lints and tests, layout cases included.
+# Every push to main that passes them is also published as a release, numbered
+# like llama.cpp's builds: v<major.minor of Cargo.toml>.<commits on main>.
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  check:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v5
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo clippy --all-targets -- -D warnings
+      - run: cargo test
+
+  release:
+    needs: check
+    if: github.event_name == 'push'
+    # The oldest supported runner, so the binary also starts on older glibc.
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: write
+    # One release at a time, in push order.
+    concurrency: release
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Version
+        run: |
+          base=$(cargo metadata --no-deps --format-version 1 | jq -r '.packages[0].version' | cut -d. -f1,2)
+          echo "TAG=v$base.$(git rev-list --count HEAD)" >> "$GITHUB_ENV"
+      - run: cargo build --release
+      - name: Package
+        run: |
+          dir=game-translator-$TAG-x86_64-linux
+          mkdir $dir
+          cp target/release/game-translator config.toml README.md LICENSE $dir/
+          cp -r profiles styles $dir/
+          tar czf $dir.tar.gz $dir
+          sha256sum $dir.tar.gz > $dir.tar.gz.sha256
+      - name: Publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create "$TAG" game-translator-*.tar.gz* --target "$GITHUB_SHA" --title "$TAG" --generate-notes

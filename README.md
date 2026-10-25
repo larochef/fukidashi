@@ -18,7 +18,7 @@ RetroArch core, in fullscreen, without screen capture or overlay windows.
 
 ## Requirements
 
-- **Rust** (stable): <https://rustup.rs>
+- **Rust** (stable): <https://rustup.rs>, unless you use a release archive
 - **Linux x86-64** with a GPU driver: Mesa (AMD, Intel) or the NVIDIA driver (570 or
   newer for CUDA). Other systems: bring your own `llama-server` (see Configuration).
 - **RetroArch** (a recent version, with the AI Service and the Vulkan or GL video driver).
@@ -47,6 +47,11 @@ staying as a fallback if the new one fails to start.
 git clone <this repository> && cd game-translator
 cargo run --release
 ```
+
+Or, without Rust, download the Linux archive of a
+[release](https://github.com/larochef/game-translator/releases), extract it and
+run `./game-translator` from its folder (it reads `config.toml`, `profiles/` and
+`styles/` from the current directory, and keeps game memory in `data/` there).
 
 The app starts `llama-server` with the translation model, then listens on
 `http://localhost:4404/`. Stop it with Ctrl+C (it stops `llama-server` too).
@@ -146,6 +151,11 @@ saved in `data/<game>/`:
   the expected panels). `replay --fixtures tests/layout captures/<frame>.png`
   adds a case; after a deliberate layout change, check the result, then accept
   it with `UPDATE_LAYOUT=1 cargo test layout`.
+- CI (`.github/workflows/ci.yml`): every push and pull request runs clippy and
+  the tests. Every push to `main` that passes them is published as a release with
+  the Linux archive, numbered like llama.cpp's builds: `v<major.minor of
+  Cargo.toml>.<number of commits>` (e.g. `v0.1.42`). Raise the version in
+  `Cargo.toml` to mark a bigger step.
 
 ## Credits
 
