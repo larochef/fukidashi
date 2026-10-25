@@ -19,7 +19,7 @@ RetroArch core, in fullscreen, without screen capture or overlay windows.
 ## Requirements
 
 - **Rust** (stable): <https://rustup.rs>, unless you use a release archive
-- **Linux x86-64** with a GPU driver: Mesa (AMD, Intel) or the NVIDIA driver (570 or
+- **Linux x86-64**, glibc 2.38 or newer (Ubuntu 24.04, Debian 13, Fedora 39 or later), with a GPU driver: Mesa (AMD, Intel) or the NVIDIA driver (570 or
   newer for CUDA). Other systems: bring your own `llama-server` (see Configuration).
 - **RetroArch** (a recent version, with the AI Service and the Vulkan or GL video driver).
 - **Memory**: the default translation model (Gemma 4 26B-A4B, 4-bit) needs about
