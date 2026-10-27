@@ -234,7 +234,7 @@ while the app runs:
   its translations shared with other players (see
   [Sharing translations](#sharing-translations)). "Delete this game" forgets
   one (a window translated by mistake with the GNOME extension, say): its
-  translations and names, not its profile.
+  translations, names and captures, not its profile.
 
 Choices made in the page are saved in `~/.config/fukidashi/engine.toml`
 and override `config.toml`; the API key goes to `secrets.toml` next to it,

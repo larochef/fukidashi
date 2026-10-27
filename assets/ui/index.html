@@ -888,7 +888,7 @@ function showGame() {
     const remove = el("button", { className: "danger", textContent: "Delete this game" });
     remove.addEventListener("click", async () => {
       const kept = game.profile ? ` Its profile (${game.profile.file}) stays: delete it from profiles/ if you do not want it.` : "";
-      if (!confirm(`Delete ${game.name}? Its translations and learned names are lost; played again, it starts from nothing.${kept}`)) return;
+      if (!confirm(`Delete ${game.name}? Its translations, learned names and captures are lost; played again, it starts from nothing.${kept}`)) return;
       try {
         await api("/api/games/" + encodeURIComponent(game.id), { method: "DELETE" });
         game = null;

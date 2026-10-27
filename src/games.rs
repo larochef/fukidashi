@@ -3,7 +3,7 @@
 
 use std::{
     collections::{BTreeMap, BTreeSet},
-    path::Path,
+    path::{Path, PathBuf},
     sync::Arc,
     time::UNIX_EPOCH,
 };
@@ -112,15 +112,26 @@ fn game_dirs(data_dir: Option<&Path>, capture_dir: &str) -> BTreeSet<String> {
             .collect()
     };
     let mut games: BTreeSet<String> = data_dir.map(names).unwrap_or_default().into_iter().filter(|(_, d)| *d).map(|(n, _)| n).collect();
-    if !capture_dir.is_empty() {
-        for (file, _) in names(Path::new(capture_dir)) {
-            let label = file.strip_suffix(".png").and_then(|f| f.split_once('_')).filter(|(time, _)| time.chars().all(|c| c.is_ascii_digit()));
-            if let Some((_, label)) = label {
-                games.insert(safe_name(label));
-            }
-        }
-    }
+    games.extend(captures(capture_dir).into_iter().map(|(dir, _)| dir));
     games
+}
+
+/// The captures saved (`<time>_<label>.png`), with the directory name of
+/// their game.
+fn captures(capture_dir: &str) -> Vec<(String, PathBuf)> {
+    if capture_dir.is_empty() {
+        return Vec::new();
+    }
+    std::fs::read_dir(capture_dir)
+        .into_iter()
+        .flatten()
+        .filter_map(Result::ok)
+        .filter_map(|e| {
+            let file = e.file_name().to_string_lossy().into_owned();
+            let (time, label) = file.strip_suffix(".png")?.split_once('_')?;
+            time.chars().all(|c| c.is_ascii_digit()).then(|| (safe_name(label), e.path()))
+        })
+        .collect()
 }
 
 async fn list(State(app): State<Arc<App>>) -> Json<Value> {
@@ -223,8 +234,8 @@ async fn detail(State(app): State<Arc<App>>, UrlPath(id): UrlPath<String>) -> Re
     })))
 }
 
-/// Forgets a game: its translations, learned names and label (its profile, a
-/// setting of its own, stays). Played again, it starts from nothing.
+/// Forgets a game: its translations, learned names, label and captures (its
+/// profile, a setting of its own, stays). Played again, it starts from nothing.
 async fn delete_game(State(app): State<Arc<App>>, UrlPath(id): UrlPath<String>) -> Result<Json<Value>, ApiError> {
     let dir = memory_dir(&id).context("no memory for this game")?;
     app.translator
@@ -234,6 +245,10 @@ async fn delete_game(State(app): State<Arc<App>>, UrlPath(id): UrlPath<String>) 
         })
         .context("memory disabled")?
         .context("cannot delete the game's memory")?;
+    // Else the game stays listed, from its captures.
+    for (_, file) in captures(&app.live().config.capture_dir).into_iter().filter(|(game, _)| game == dir) {
+        std::fs::remove_file(&file).with_context(|| format!("cannot delete {}", file.display()))?;
+    }
     tracing::info!(game = dir, "game deleted");
     Ok(Json(json!({ "ok": true })))
 }
