@@ -87,8 +87,13 @@ draft_args = ["--spec-type", "draft-mtp", "-ngld", "999"]
 # memory; the next translation starts it again (a few seconds). 0: never.
 idle_minutes = 30
 # Thinking off: Gemma 4 otherwise spends its token budget reasoning.
+# No -ngl: llama.cpp fits the model to the GPU memory free when it starts (the
+# game's included): all of it on the GPU when it fits, else part of the MoE
+# experts in RAM, slower but working. --fit-target is the GPU memory it leaves
+# free, in MiB: enough for the draft model, which it does not count.
+# Flash attention: "auto" turns it on wherever the GPU supports it.
 args = [
-    "-ngl", "999", "-c", "16384", "-np", "1", "-fa", "on", "--no-webui",
+    "-c", "16384", "-np", "1", "-fa", "auto", "--fit-target", "1536", "--no-webui",
     "--reasoning-budget", "0", "--chat-template-kwargs", '{"enable_thinking":false}',
 ]
 

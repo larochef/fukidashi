@@ -25,8 +25,10 @@ RetroArch core, in fullscreen, without screen capture or overlay windows.
 - **Linux x86-64**, glibc 2.39 or newer (Ubuntu 24.04, Debian 13, Fedora 40 or later), with a GPU driver: Mesa (AMD, Intel) or the NVIDIA driver (570 or
   newer for CUDA). Other systems: bring your own `llama-server` (see Configuration).
 - **RetroArch** (a recent version, with the AI Service and the Vulkan or GL video driver).
-- **Memory**: the default translation model (Gemma 4 26B-A4B, 4-bit) needs about
-  20 GB of GPU or unified memory, on top of the game. OCR runs on the CPU.
+- **Memory**: the default translation model (Gemma 4 26B-A4B, 4-bit) runs best
+  with about 18 GB of GPU or unified memory free, on top of the game. With less
+  (a 8 to 16 GB graphics card), llama.cpp keeps part of the model in RAM: slower,
+  but it works, as long as GPU and RAM together hold it. OCR runs on the CPU.
 
 The OCR models (~90 MB) are downloaded on first start. The local translation
 model is only downloaded once you choose it (see First start): a prebuilt
