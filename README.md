@@ -75,7 +75,8 @@ Choose where the text is translated:
 - **With a provider**: any OpenAI-compatible endpoint, nothing to download.
 
 The same page offers to start Fukidashi when you log in, and, on GNOME, to
-enable the extension. In a terminal: `fukidashi setup local`, or
+enable the extension (installed by a package: log out and back in, or restart, first; see
+[GNOME extension](#gnome-extension)). In a terminal: `fukidashi setup local`, or
 `fukidashi setup remote URL MODEL --key KEY`.
 
 ## Running
@@ -110,34 +111,76 @@ In the **AI Service** settings (under Settings, or Settings → Accessibility de
 Then bind a key in **Settings → Input → Hotkeys → AI Service**. The video
 driver must be `gl`, `glcore` or `vulkan` for the transparent overlay.
 
-### Any game, outside RetroArch (GNOME)
+### Any game, outside RetroArch
 
-On GNOME, an extension translates whatever is on screen: a PC game, a standalone
-emulator, a video. Press **Super+T**: the monitor of the focused window is
-captured and sent to the app (which must be running), and the translation is
-shown over it. The packages install it: enable it from the page (or
-`gnome-extensions enable fukidashi@larochef.github.io`), then log out and back
-in. Any key, a click or a gamepad button hides it (gamepads need
-libmanette, installed with WebKitGTK on most systems; the button also reaches
-the game). The game is not paused, and the window's class (`steam_app_1234`,
-`pcsx2-qt`…) stands for the game label, for its memory and profile.
+On GNOME, the extension translates whatever is on screen: see
+[GNOME extension](#gnome-extension).
 
-Without a package, install it from a release (`fukidashi@larochef.github.io.zip`),
-then log out and back in (GNOME on Wayland loads extensions at login):
+## GNOME extension
 
-```sh
-gnome-extensions install --force fukidashi@larochef.github.io.zip
-gnome-extensions enable fukidashi@larochef.github.io
-```
+It translates whatever is on screen, not only RetroArch: a PC game, a
+standalone emulator, a video. Press **Super+T**: the monitor of the focused
+window is captured and sent to the app (which must be running), and the
+translation is shown over it. Any key, a click or a gamepad button hides it
+(gamepads need libmanette, installed with WebKitGTK on most systems; the button
+also reaches the game). The game is not paused, and the window's class
+(`steam_app_1234`, `pcsx2-qt`…) stands for the game label, for its memory and
+profile.
 
-Or from a clone: `glib-compile-schemas gnome-extension/schemas`, then link
-`gnome-extension` as `~/.local/share/gnome-shell/extensions/fukidashi@larochef.github.io`.
+### Install
+
+- **With a package** (`.deb`, `.rpm`, AUR): it is installed for every user,
+  nothing more to install.
+- **From a release**, without a package: download
+  `fukidashi@larochef.github.io.zip`, then
+  `gnome-extensions install --force fukidashi@larochef.github.io.zip`.
+- **From a clone**: `glib-compile-schemas gnome-extension/schemas`, then link
+  `gnome-extension` as
+  `~/.local/share/gnome-shell/extensions/fukidashi@larochef.github.io`.
+
+### Enable
+
+GNOME never enables an extension by itself, and only looks for extensions when
+you log in. So, once installed:
+
+1. **Log out and back in**, or restart (GNOME hides "Log Out" when the
+   computer has a single user account). Until then, GNOME does not know the extension:
+   it is missing from the Extensions app, and `gnome-extensions` answers that
+   it "doesn't exist".
+2. **Enable it**: on Fukidashi's page (Getting started, or Settings → This
+   computer), in the Extensions app, or:
+
+   ```sh
+   gnome-extensions enable fukidashi@larochef.github.io
+   ```
+
+3. **Check it**: `gnome-extensions info fukidashi@larochef.github.io` says
+   `Enabled: Yes` and `State: ACTIVE`.
+
+Fukidashi's page shows where the extension stands and the command for the next
+step.
+
+### Settings
 
 The shortcut, the language to translate into (by default the system's) and the
-app's address are in the extension's preferences: `gnome-extensions prefs
-fukidashi@larochef.github.io`. The extension lists the GNOME versions it
-was checked with (`shell-version` in `metadata.json`); a newer GNOME refuses it
-until its version is added there.
+app's address are in the extension's preferences, from the Extensions app or:
+
+```sh
+gnome-extensions prefs fukidashi@larochef.github.io
+```
+
+### When it does not work
+
+| `gnome-extensions info` says | Why, and what to do |
+|---|---|
+| "doesn't exist" | Installed since you logged in: log out and back in, or restart. |
+| `Enabled: No` | Enable it (above). |
+| `State: INITIALIZED` or `INACTIVE` | User extensions are turned off (the switch at the top of the Extensions app): `gsettings set org.gnome.shell disable-user-extensions false`. Packages install it as a system extension, which this switch does not affect. |
+| `State: OUT OF DATE` | GNOME is newer than the versions it was checked with (`shell-version` in `metadata.json`): a newer Fukidashi may support it. |
+| `State: ERROR` | It failed to start; GNOME Shell's log says why: `journalctl -b -o cat /usr/bin/gnome-shell \| grep -i fukidashi`. |
+
+Super+T showing an error notification means the extension works but the app
+does not answer: start it (the menu entry, or `fukidashi open`).
 
 ## Settings page
 
@@ -234,14 +277,16 @@ saved in `~/.local/share/fukidashi/data/<game>/` (`data_dir`):
   the expected panels). `replay --fixtures tests/layout captures/<frame>.png`
   adds a case; after a deliberate layout change, check the result, then accept
   it with `UPDATE_LAYOUT=1 cargo test layout`.
-- `packaging/`: the user service, the menu entry, and a starting point for the
-  AUR package; `Cargo.toml` lists what the `.deb` (`cargo deb`) and the `.rpm`
+- `packaging/`: the user service, the menu entry, and the AUR package's
+  PKGBUILD (`aur/`, published by the CI); `Cargo.toml` lists what the `.deb` (`cargo deb`) and the `.rpm`
   (`cargo generate-rpm`) install.
 - CI (`.github/workflows/ci.yml`): every push and pull request runs clippy and
   the tests. Every push to `main` that passes them is published as a release with
   the packages and the Linux archive, numbered like llama.cpp's builds: `v<major.minor of
   Cargo.toml>.<number of commits>` (e.g. `v0.1.42`). Raise the version in
-  `Cargo.toml` to mark a bigger step.
+  `Cargo.toml` to mark a bigger step. Each release then updates the AUR package
+  `fukidashi-bin`: `packaging/aur/PKGBUILD` with the release's version and
+  checksum, pushed with the `AUR_SSH_KEY` secret (skipped without it).
 
 ## Credits
 

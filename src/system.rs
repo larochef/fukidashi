@@ -2,6 +2,8 @@
 //! asked there: starting with the session (the user service the packages
 //! install) and the GNOME Shell extension.
 
+use std::path::{Path, PathBuf};
+
 use serde::Deserialize;
 use serde_json::{Value, json};
 use tokio::process::Command;
@@ -40,18 +42,41 @@ async fn service_state() -> &'static str {
     }
 }
 
-/// The extension as `gnome-extensions info` tells it: installed, enabled,
-/// and its state (`ACTIVE` once loaded, which a new extension only is after
-/// logging in again).
+/// `~/.local/share` (`$XDG_DATA_HOME`).
+fn user_data_dir() -> PathBuf {
+    let app = crate::config::data_home();
+    app.parent().map_or(app.clone(), Path::to_path_buf)
+}
+
+/// The directories GNOME Shell reads extensions from, the user's first.
+fn extension_dirs() -> Vec<PathBuf> {
+    let data_dirs = std::env::var("XDG_DATA_DIRS").ok().filter(|d| !d.is_empty());
+    let data_dirs = data_dirs.as_deref().unwrap_or("/usr/local/share:/usr/share");
+    std::iter::once(user_data_dir())
+        .chain(data_dirs.split(':').filter(|d| !d.is_empty()).map(PathBuf::from))
+        .map(|dir| dir.join("gnome-shell/extensions").join(EXTENSION))
+        .collect()
+}
+
+/// The extension as `gnome-extensions info` tells it: enabled, its state
+/// (`ACTIVE` once running), and whether it is a user extension, which GNOME's
+/// `disable-user-extensions` turns off. GNOME Shell only looks for extensions
+/// at login: one installed since is on disk but unknown to it (`loaded`
+/// false) until the user logs in again.
 async fn extension_state() -> Value {
     let Some(info) = output("gnome-extensions", &["info", EXTENSION]).await else {
-        return json!({ "installed": false });
+        return json!({ "installed": extension_dirs().iter().any(|d| d.join("metadata.json").is_file()), "loaded": false });
     };
     let field = |name: &str| info.lines().find_map(|l| l.trim().strip_prefix(name).map(|v| v.trim().to_owned()));
+    let user = field("Path:").is_some_and(|path| Path::new(&path).starts_with(user_data_dir()));
+    let user_extensions_off = user
+        && output("gsettings", &["get", "org.gnome.shell", "disable-user-extensions"]).await.is_some_and(|v| v.trim() == "true");
     json!({
         "installed": true,
+        "loaded": true,
         "enabled": field("Enabled:").is_some_and(|v| v == "Yes"),
         "state": field("State:"),
+        "user_extensions_off": user_extensions_off,
     })
 }
 

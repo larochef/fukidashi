@@ -500,22 +500,52 @@ function showSystem(sys, error) {
         label.append(box, " Start Fukidashi when I log in");
         rows.push(label);
       }
-      if (sys.gnome) {
-        const ext = sys.extension || {};
-        const p = document.createElement("p");
-        if (!ext.installed) p.textContent = "GNOME extension (translates any screen with Super+T): not installed; it comes with Fukidashi's package.";
-        else if (!ext.enabled) {
-          p.textContent = "GNOME extension: translates any screen, not only RetroArch, with Super+T. ";
-          const button = Object.assign(document.createElement("button"), { textContent: "Enable it" });
-          button.addEventListener("click", () => setSystem({ extension: true }));
-          p.append(button);
-        } else if (ext.state !== "ACTIVE") p.textContent = "GNOME extension enabled: log out and back in to load it, then Super+T translates the screen.";
-        else p.textContent = "GNOME extension active: Super+T translates the screen.";
-        rows.push(p);
-      }
+      if (sys.gnome) rows.push(extensionHelp(sys.extension || {}));
     }
     box.replaceChildren(...rows);
   }
+}
+
+const EXTENSION = "fukidashi@larochef.github.io";
+
+// The GNOME extension's state, and what to do next: GNOME Shell only finds
+// extensions at login, and never enables a new one by itself.
+function extensionHelp(ext) {
+  const p = (text) => el("p", { className: "hint", style: "margin: 8px 0 0", textContent: text });
+  const command = (text) => el("pre", { style: "margin-top: 6px", textContent: text });
+  const box = el("div", { style: "margin-top: 12px" });
+  const title = (text) => box.append(el("div", { textContent: text }));
+  if (!ext.installed) {
+    title("GNOME extension: not installed.");
+    box.append(p("It translates any screen, not only RetroArch, with Super+T. It comes with Fukidashi's packages, or from a release (see the README)."));
+  } else if (!ext.loaded) {
+    title("GNOME extension: installed, not loaded yet.");
+    box.append(p("GNOME only looks for extensions when you log in: log out and back in (or restart), then enable it here, in the Extensions app, or with:"),
+      command(`gnome-extensions enable ${EXTENSION}`));
+  } else if (!ext.enabled) {
+    const button = el("button", { textContent: "Enable it", style: "margin-left: 8px" });
+    button.addEventListener("click", () => setSystem({ extension: true }));
+    box.append(el("div", {}, "GNOME extension: installed, not enabled.", button),
+      p("It translates any screen, not only RetroArch, with Super+T. Or in a terminal:"),
+      command(`gnome-extensions enable ${EXTENSION}`));
+  } else if (ext.state === "ACTIVE") {
+    title("GNOME extension active: Super+T translates the screen.");
+    box.append(p("Shortcut, language and address in its preferences:"), command(`gnome-extensions prefs ${EXTENSION}`));
+  } else if (ext.user_extensions_off) {
+    title("GNOME extension enabled, but GNOME has user extensions turned off.");
+    box.append(p("Turn them back on (the switch at the top of the Extensions app), or:"),
+      command("gsettings set org.gnome.shell disable-user-extensions false"));
+  } else if (/OUT.OF.DATE/.test(ext.state || "")) {
+    title("GNOME extension enabled, but not made for this version of GNOME.");
+    box.append(p("A newer Fukidashi release may support it: the GNOME versions it was checked with are in its metadata.json (shell-version)."));
+  } else if (ext.state === "ERROR") {
+    title("GNOME extension enabled, but it failed to start.");
+    box.append(p("GNOME Shell's log tells why:"), command("journalctl -b -o cat /usr/bin/gnome-shell | grep -i fukidashi"));
+  } else {
+    title(`GNOME extension enabled, not running yet (${ext.state || "unknown state"}).`);
+    box.append(p("Log out and back in (or restart), then check it with:"), command(`gnome-extensions info ${EXTENSION}`));
+  }
+  return box;
 }
 
 async function loadSystem() {

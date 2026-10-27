@@ -1,25 +1,22 @@
-# The AUR package fukidashi-bin, from a release archive. A starting point for
-# its own repository (ssh://aur@aur.archlinux.org/fukidashi-bin.git): for a new
-# release, set pkgver, then `updpkgsums && makepkg --printsrcinfo > .SRCINFO`.
-# Maintainer: François Laroche <francois at laroche dot dev>
+# Maintainer: François Laroche <https://github.com/larochef>
 pkgname=fukidashi-bin
-pkgver=0.1.0
+pkgver=0.1.8
 pkgrel=1
 pkgdesc="Translates the Japanese text of games while you play, on your own machine"
 arch=('x86_64')
 url="https://github.com/larochef/fukidashi"
 license=('MIT')
-depends=('glibc' 'gcc-libs')
+depends=('glibc' 'libgcc' 'libstdc++')
 optdepends=('retroarch: translate games through its AI Service'
             'gnome-shell: translate any window with the GNOME extension'
             'libmanette: hide a translation with a gamepad button (GNOME extension)')
 provides=('fukidashi')
 conflicts=('fukidashi')
-source=("$url/releases/download/v$pkgver/fukidashi-v$pkgver-x86_64-linux.tar.gz")
-sha256sums=('SKIP')
+source_x86_64=("$url/releases/download/v$pkgver/fukidashi-v$pkgver-x86_64-linux.tar.gz")
+sha256sums_x86_64=('231e03dd91dcb713b92d6ec505fbf04a27ff45cdd6f7f6c8fe26322b7303ace0')
 
 package() {
-    cd "fukidashi-v$pkgver-x86_64-linux"
+    cd "fukidashi-v$pkgver-$CARCH-linux"
     install -Dm755 fukidashi "$pkgdir/usr/bin/fukidashi"
     install -Dm644 fukidashi.service "$pkgdir/usr/lib/systemd/user/fukidashi.service"
     install -Dm644 fukidashi.desktop "$pkgdir/usr/share/applications/fukidashi.desktop"

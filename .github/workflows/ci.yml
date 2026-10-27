@@ -30,6 +30,9 @@ jobs:
       contents: write
     # One release at a time, in push order.
     concurrency: release
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      sha256: ${{ steps.package.outputs.sha256 }}
     steps:
       - uses: actions/checkout@v5
         with:
@@ -40,6 +43,7 @@ jobs:
         with:
           tool: cargo-deb,cargo-generate-rpm
       - name: Version
+        id: version
         # Written into Cargo.toml, so the binary (`fukidashi --version`) and the
         # packages carry it.
         run: |
@@ -48,8 +52,10 @@ jobs:
           sed -i "0,/^version = .*/s//version = \"$version\"/" Cargo.toml
           echo "VERSION=$version" >> "$GITHUB_ENV"
           echo "TAG=v$version" >> "$GITHUB_ENV"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
       - run: cargo build --release
       - name: Package
+        id: package
         run: |
           # .deb and .rpm: the files listed in Cargo.toml's package.metadata.
           cargo deb --no-build --output fukidashi_${VERSION}_amd64.deb
@@ -68,9 +74,58 @@ jobs:
           glib-compile-schemas gnome-extension/schemas
           (cd gnome-extension && zip -r ../fukidashi@larochef.github.io.zip .)
           sha256sum $dir.tar.gz *.deb *.rpm fukidashi@larochef.github.io.zip > SHA256SUMS
+          echo "sha256=$(sha256sum $dir.tar.gz | cut -d' ' -f1)" >> "$GITHUB_OUTPUT"
       - name: Publish
         env:
           GH_TOKEN: ${{ github.token }}
         run: >
           gh release create "$TAG" fukidashi-*.tar.gz *.deb *.rpm fukidashi@larochef.github.io.zip SHA256SUMS
           --target "$GITHUB_SHA" --title "$TAG" --generate-notes
+
+  # The AUR package fukidashi-bin follows every release: packaging/aur/PKGBUILD
+  # with the release's version and archive checksum. Needs the AUR_SSH_KEY
+  # secret (a private key whose public half is on the AUR account); skipped
+  # without it.
+  aur:
+    needs: release
+    runs-on: ubuntu-24.04
+    container: archlinux:base-devel
+    concurrency: aur
+    steps:
+      - name: Check the key
+        id: key
+        env:
+          AUR_SSH_KEY: ${{ secrets.AUR_SSH_KEY }}
+        run: |
+          if [ -n "$AUR_SSH_KEY" ]; then echo "present=true" >> "$GITHUB_OUTPUT"
+          else echo "::warning::No AUR_SSH_KEY secret: the AUR package is not updated."; fi
+      - uses: actions/checkout@v5
+        if: steps.key.outputs.present
+      - name: Update and push
+        if: steps.key.outputs.present
+        env:
+          AUR_SSH_KEY: ${{ secrets.AUR_SSH_KEY }}
+          VERSION: ${{ needs.release.outputs.version }}
+          SHA256: ${{ needs.release.outputs.sha256 }}
+        run: |
+          pacman -Sy --noconfirm --needed git openssh
+          install -dm700 ~/.ssh
+          printf '%s\n' "$AUR_SSH_KEY" > ~/.ssh/aur && chmod 600 ~/.ssh/aur
+          # The AUR's key, as published on https://aur.archlinux.org (SHA256:RFzBCUIt…).
+          echo 'aur.archlinux.org ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIEuBKrPzbawxA/k2g6NcyV5jmqwJ2s+zpgZGZ7tpLIcN' > ~/.ssh/known_hosts
+          export GIT_SSH_COMMAND="ssh -i $HOME/.ssh/aur -o UserKnownHostsFile=$HOME/.ssh/known_hosts"
+          git clone ssh://aur@aur.archlinux.org/fukidashi-bin.git /tmp/aur
+          sed -e "s/^pkgver=.*/pkgver=$VERSION/" -e "s/^pkgrel=.*/pkgrel=1/" \
+              -e "s/^sha256sums_x86_64=.*/sha256sums_x86_64=('$SHA256')/" \
+              packaging/aur/PKGBUILD > /tmp/aur/PKGBUILD
+          # makepkg refuses to run as root.
+          useradd -m builder && chown -R builder /tmp/aur
+          su builder -c 'cd /tmp/aur && makepkg --printsrcinfo > .SRCINFO'
+          cd /tmp/aur
+          git config --global --add safe.directory /tmp/aur
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add PKGBUILD .SRCINFO
+          if git diff --cached --quiet; then echo "Already up to date."; exit 0; fi
+          git commit -m "Update to $VERSION"
+          git push origin master
