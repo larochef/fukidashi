@@ -114,6 +114,61 @@ impl Gpus {
     }
 }
 
+/// The memory a model can use, in GB, to pick one that fits.
+#[derive(Debug, Clone, Copy, Default, Serialize)]
+pub struct Memory {
+    /// The largest GPU's, unified memory included; `None` when unknown (no
+    /// GPU, or one whose driver does not tell).
+    pub gpu: Option<f64>,
+    pub ram: f64,
+}
+
+impl Memory {
+    pub fn detect() -> Self {
+        Memory { gpu: amd_memory().or_else(nvidia_memory), ram: ram() }
+    }
+}
+
+const GB: f64 = 1_073_741_824.0;
+
+/// What ROCm can allocate on the largest AMD GPU: its VRAM, or on an APU
+/// (Strix Halo) the system memory it shares.
+fn amd_memory() -> Option<f64> {
+    std::fs::read_dir("/sys/class/kfd/kfd/topology/nodes")
+        .ok()?
+        .filter_map(Result::ok)
+        .filter(|node| {
+            std::fs::read_to_string(node.path().join("properties")).is_ok_and(|p| {
+                p.lines().any(|l| l.strip_prefix("gfx_target_version ").is_some_and(|v| v.trim() != "0"))
+            })
+        })
+        .filter_map(|node| {
+            let banks = std::fs::read_dir(node.path().join("mem_banks")).ok()?;
+            let bytes: u64 = banks
+                .filter_map(Result::ok)
+                .filter_map(|bank| std::fs::read_to_string(bank.path().join("properties")).ok())
+                .filter_map(|p| p.lines().find_map(|l| l.strip_prefix("size_in_bytes ")?.trim().parse::<u64>().ok()))
+                .sum();
+            (bytes > 0).then_some(bytes as f64 / GB)
+        })
+        .reduce(f64::max)
+}
+
+fn nvidia_memory() -> Option<f64> {
+    let output = std::process::Command::new("nvidia-smi")
+        .args(["--query-gpu=memory.total", "--format=csv,noheader,nounits"])
+        .output()
+        .ok()?;
+    // One line per GPU, in MiB.
+    String::from_utf8_lossy(&output.stdout).lines().filter_map(|l| l.trim().parse::<f64>().ok()).map(|mib| mib / 1024.0).reduce(f64::max)
+}
+
+fn ram() -> f64 {
+    let meminfo = std::fs::read_to_string("/proc/meminfo").unwrap_or_default();
+    let kib = meminfo.lines().find_map(|l| l.strip_prefix("MemTotal:")?.trim().strip_suffix("kB")?.trim().parse::<f64>().ok());
+    kib.map_or(0.0, |kib| kib / 1_048_576.0)
+}
+
 /// The build for the `runtime` setting: "auto" picks from the GPUs found.
 pub fn variant(setting: &str) -> anyhow::Result<Variant> {
     let gpus = Gpus::detect();

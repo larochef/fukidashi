@@ -100,6 +100,76 @@ pub struct Backend {
     /// Sent as a bearer token; never read from the config file.
     #[serde(skip)]
     pub api_key: Option<String>,
+    /// How the model is asked: set from the local model in use.
+    #[serde(skip)]
+    pub mode: Mode,
+    /// The request of a translation model (`Mode::Translate`).
+    #[serde(skip)]
+    pub prompt: String,
+}
+
+/// How a model is asked to translate.
+#[derive(Debug, Default, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum Mode {
+    /// A chat model: the whole screen in one JSON request, the recent
+    /// exchanges as context, and the names it read in return.
+    #[default]
+    Chat,
+    /// A translation model: one request per block, with the glossary and the
+    /// names already known, but no context.
+    Translate,
+}
+
+/// A local model offered in the page (`[translate.models.<id>]`).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct LocalModel {
+    pub name: String,
+    /// 1 to 5, as shown to the user.
+    pub quality: u8,
+    pub summary: String,
+    /// GB of GPU memory it runs well with; absent: not proposed for a GPU.
+    pub gpu_memory: Option<f64>,
+    /// GB of RAM it needs without a GPU; absent: too slow there.
+    pub ram: Option<f64>,
+    /// Download size in GB.
+    pub size: f64,
+    #[serde(default)]
+    pub mode: Mode,
+    /// `owner/repo:file` on Hugging Face, like `[translate.server] model`.
+    pub file: String,
+    /// Another file for one kind of build, like `[translate.server] models`.
+    #[serde(default)]
+    pub files: BTreeMap<String, String>,
+    pub draft: Option<String>,
+    /// Server arguments, after `[translate.server] args`.
+    #[serde(default)]
+    pub args: Vec<String>,
+    pub temperature: Option<f32>,
+    /// Merged into each request, like `translate.extra`.
+    #[serde(default)]
+    pub request: serde_json::Map<String, Value>,
+    /// For a translation model: the request, where `{terms}` becomes the known
+    /// names and glossary entries the text uses, `{lang}` the target language
+    /// and `{text}` the text.
+    #[serde(default)]
+    pub prompt: String,
+}
+
+/// The model to propose for this computer: the best one that fits in the
+/// GPU's memory, or without a GPU in the RAM (bigger first among equals).
+pub fn recommend<'a>(models: &'a BTreeMap<String, LocalModel>, memory: &crate::runtime::Memory) -> Option<&'a str> {
+    // A "16 GB" card reports a little less.
+    let fits = |need: Option<f64>, have: f64| need.is_some_and(|need| need <= have + 0.5);
+    let fitting: Vec<(&String, &LocalModel)> = match memory.gpu {
+        Some(gpu) => models.iter().filter(|(_, m)| fits(m.gpu_memory, gpu)).collect(),
+        None => models.iter().filter(|(_, m)| fits(m.ram, memory.ram)).collect(),
+    };
+    let need = |m: &LocalModel| if memory.gpu.is_some() { m.gpu_memory } else { m.ram }.unwrap_or_default();
+    fitting
+        .into_iter()
+        .max_by(|(_, a), (_, b)| a.quality.cmp(&b.quality).then(need(a).total_cmp(&need(b))))
+        .map(|(id, _)| id.as_str())
 }
 
 /// PP-OCR models: registered names are downloaded on first use, paths are used as is.
@@ -134,6 +204,9 @@ pub struct TranslateConfig {
     pub system_prompt: String,
     /// When present, the app starts this server if nothing answers on `url`.
     pub server: Option<ServerConfig>,
+    /// The local models to choose from, by id.
+    #[serde(default)]
+    pub models: BTreeMap<String, LocalModel>,
 }
 
 #[derive(Debug, Default, Clone, Copy, PartialEq, Serialize, Deserialize)]
@@ -174,6 +247,8 @@ pub struct ServerConfig {
     pub release: String,
     #[serde(default)]
     pub update: Update,
+    /// A model of `[translate.models]` by id, or an `owner/repo:file` of your
+    /// own (asked as a chat model); the page's choice takes precedence.
     pub model: String,
     /// Model for one kind of build ("cuda", "vulkan", "strix", "cpu"), when
     /// another quantization suits it better.
@@ -341,6 +416,9 @@ impl Config {
             none_if_empty(&mut server.command);
             none_if_empty(&mut server.draft);
         }
+        for model in config.translate.models.values_mut() {
+            none_if_empty(&mut model.draft);
+        }
 
         let styles = files(builtin::STYLES, &user_styles_dir())?;
         for (name, text) in files(builtin::PROFILES, &user_profiles_dir())? {
@@ -425,7 +503,7 @@ pub fn style_names() -> Vec<String> {
 
 #[cfg(test)]
 mod tests {
-    use super::{Config, merged};
+    use super::{Config, merged, recommend};
 
     #[test]
     fn user_settings_override_the_shipped_ones() {
@@ -446,6 +524,24 @@ mod tests {
         // Styles are merged into the profiles that use them.
         let kimikiss = config.profile_for("playstation2__KimiKiss (Japan)").unwrap();
         assert!(kimikiss.instructions.len() > kimikiss.text.len() / 4);
+    }
+
+    #[test]
+    fn proposes_the_model_that_fits() {
+        use crate::runtime::Memory;
+        let config = Config::parse("").unwrap();
+        let models = &config.translate.models;
+        assert_eq!(config.translate.server.unwrap().model, "gemma-4-26b");
+        let gpu = |gb: f64| recommend(models, &Memory { gpu: Some(gb), ram: 16.0 });
+        let cpu = |gb: f64| recommend(models, &Memory { gpu: None, ram: gb });
+        assert_eq!(gpu(124.0), Some("gemma-4-26b"));
+        assert_eq!(gpu(15.9), Some("gemma-4-26b"));
+        assert_eq!(gpu(12.0), Some("hy-mt2-7b"));
+        assert_eq!(gpu(8.0), Some("hy-mt2-7b"));
+        assert_eq!(gpu(4.0), Some("hy-mt2-1-8b"));
+        assert_eq!(gpu(2.0), None);
+        assert_eq!(cpu(64.0), Some("hy-mt2-30b"));
+        assert_eq!(cpu(16.0), Some("hy-mt2-1-8b"));
     }
 
     #[test]

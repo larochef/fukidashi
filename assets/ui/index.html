@@ -92,6 +92,15 @@
   .checks { display: flex; gap: 14px; flex-wrap: wrap; }
   .checks label { display: flex; gap: 6px; align-items: center; color: var(--text); font-size: 14px; }
   .empty { color: var(--muted); padding: 24px 0; text-align: center; }
+  .models { display: grid; gap: 10px; margin-top: 14px; }
+  .model { display: grid; grid-template-columns: 22px 1fr; gap: 4px 10px; text-align: left; padding: 12px 14px; border-radius: 8px; width: 100%; }
+  .model input { margin-top: 4px; }
+  .model.on { border-color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent); }
+  .model.unfit { opacity: .6; }
+  .model .title { display: flex; gap: 10px; align-items: baseline; flex-wrap: wrap; }
+  .model .stars { color: var(--warn); letter-spacing: 1px; }
+  .model .badge { font-size: 12px; padding: 1px 8px; border-radius: 999px; background: var(--accent); color: var(--accent-text); }
+  .model p { grid-column: 2; margin: 0; font-size: 13px; color: var(--muted); }
 </style>
 </head>
 <body>
@@ -112,14 +121,14 @@
   </section>
   <section>
     <h2>On this computer</h2>
-    <p class="hint">A local model: private, free, and it works offline. It runs best with about 18 GB of GPU or unified memory free; with less, part of it stays in RAM, slower but working. It is loaded with the first translation and unloaded after a while without one.</p>
+    <p class="hint">A local model: private, free, and it works offline. It is loaded with the first translation and unloaded after a while without one.</p>
     <div class="grid">
       <label>GPU</label><div id="w-gpu">…</div>
-      <label>Model</label><div><code id="w-model">…</code></div>
-      <label>Download</label><div id="w-size">…</div>
+      <label>Memory</label><div id="w-memory">…</div>
     </div>
+    <div class="models" id="w-models"></div>
     <div class="row" style="margin-top: 16px">
-      <button class="primary" id="w-local">Use the local model</button>
+      <button class="primary" id="w-local">Use this model</button>
       <span class="message" id="w-local-message"></span>
     </div>
   </section>
@@ -173,7 +182,10 @@
         <option value="notify">Only tell me in the log</option>
         <option value="off">Never check</option>
       </select>
-      <label>Model</label><div><code id="model">…</code></div>
+      <label for="local-model">Model</label>
+      <select id="local-model"></select>
+      <div class="field-help" id="local-model-help"></div>
+      <label>File</label><div><code id="model">…</code></div>
       <label>Installed</label>
       <dl class="builds" id="builds" style="margin:0"></dl>
     </div>
@@ -335,26 +347,62 @@ function showStatus(data) {
 
 const gb = (bytes) => (bytes / 1073741824).toFixed(1) + " GB";
 
-// The first-run page: what the local model needs, and how its start goes.
+// The first-run page: the local models, the one fitting this computer, and
+// how its start goes.
+let chosenModel = null;
+
+const stars = (n) => "★".repeat(n) + "☆".repeat(5 - n);
+
+function memoryText(memory) {
+  const gpu = memory.gpu ? Math.round(memory.gpu) + " GB of GPU memory" : "no GPU memory found";
+  return gpu + " · " + Math.round(memory.ram) + " GB of RAM";
+}
+
+// What a model needs, and whether this computer has it.
+function modelNeeds(m, memory) {
+  if (memory.gpu) {
+    if (m.gpu_memory) return [m.gpu_memory <= memory.gpu + 0.5, "Runs well with " + m.gpu_memory + " GB of GPU memory"];
+    return [m.ram <= memory.ram + 0.5, "Made for computers without a suitable GPU: " + m.ram + " GB of RAM"];
+  }
+  if (m.ram) return [m.ram <= memory.ram + 0.5, "Without a GPU: needs " + m.ram + " GB of RAM"];
+  return [false, "Needs a GPU with " + m.gpu_memory + " GB of memory"];
+}
+
+function showModels(data) {
+  const local = data.local;
+  if (chosenModel === null) chosenModel = data.configured ? local.model_id : (local.recommended || local.model_id);
+  $("w-models").replaceChildren(...local.models.map((m) => {
+    const [fits, needs] = modelNeeds(m, local.memory);
+    const radio = el("input", { type: "radio", name: "w-model", checked: m.id === chosenModel });
+    const title = el("div", { className: "title" }, el("b", { textContent: m.name }), el("span", { className: "stars", textContent: stars(m.quality), title: "Quality " + m.quality + "/5" }));
+    if (m.id === local.recommended) title.append(el("span", { className: "badge", textContent: "Recommended for this computer" }));
+    if (data.configured && data.provider === "local" && m.id === local.model_id) title.append(el("span", { className: "hint", style: "margin: 0", textContent: "in use" }));
+    const card = el("label", { className: "model" + (m.id === chosenModel ? " on" : "") + (fits ? "" : " unfit") }, radio, title,
+      el("p", { textContent: m.summary }),
+      el("p", { textContent: needs + " · " + (m.cached ? "already downloaded" : "download " + m.size + " GB") + (fits ? "" : " (more than this computer has)") }));
+    radio.addEventListener("change", () => { chosenModel = m.id; showWelcome(state); });
+    return card;
+  }));
+}
+
 function showWelcome(data) {
   $("w-gpu").textContent = gpuText(data.local.gpus);
-  $("w-model").textContent = data.local.model || "–";
-  $("w-size").textContent = data.local.model_cached ? "Already downloaded"
-    : data.local.model_size ? gb(data.local.model_size) + ", plus the llama.cpp build for your GPU (35 to 600 MB)"
-    : "About 16 GB, plus the llama.cpp build for your GPU";
+  $("w-memory").textContent = memoryText(data.local.memory);
+  showModels(data);
   const s = data.status;
+  const inUse = data.configured && data.provider === "local" && data.local.model_id === chosenModel;
   let text = "", level = "";
-  if (data.configured && data.provider === "local") {
+  if (inUse) {
     if (s.state === "starting") { text = s.detail ? s.detail.charAt(0).toUpperCase() + s.detail.slice(1) + "…" : "Starting…"; level = "warn"; }
     else if (s.state === "ready" || s.state === "external") { text = "Ready: the model is loaded."; level = "ok"; }
     else if (s.state === "sleeping") { text = "Ready: the model loads with the first translation."; level = "ok"; }
     else if (s.state === "failed") { text = "Failed to start: " + s.detail; level = "bad"; }
-  } else if (data.configured) {
+  } else if (data.configured && data.provider === "remote") {
     text = "A provider is in use (Translation engine page).";
   }
   $("w-local-message").textContent = text;
   $("w-local-message").className = "message " + level;
-  $("w-local").disabled = data.configured && data.provider === "local";
+  $("w-local").disabled = inUse;
 }
 
 function showBuilds(local) {
@@ -381,6 +429,10 @@ function show(data, live) {
   showWelcome(data);
   showBuilds(data.local);
   $("gpu").textContent = gpuText(data.local.gpus);
+  const select = $("local-model");
+  if (select.options.length !== data.local.models.length) {
+    select.replaceChildren(...data.local.models.map((m) => new Option(m.name + " · " + stars(m.quality) + (m.id === data.local.recommended ? " · recommended" : ""), m.id)));
+  }
   $("model").textContent = data.local.model || "–";
   const note = $("program-note");
   note.classList.toggle("hidden", !data.local.program);
@@ -393,12 +445,19 @@ function show(data, live) {
   $("clear-key").disabled = key !== "file";
   if (live) return;
   showProvider(data.provider);
+  $("local-model").value = data.local.model_id;
+  showModelHelp();
   $("runtime").value = data.local.runtime;
   $("release").value = data.local.release;
   $("update").value = data.local.update;
   $("url").value = data.remote.url;
   $("remote-model").value = data.remote.model;
   $("extra").value = Object.keys(data.remote.extra || {}).length ? JSON.stringify(data.remote.extra, null, 2) : "";
+}
+
+function showModelHelp() {
+  const m = state && state.local.models.find((m) => m.id === $("local-model").value);
+  $("local-model-help").textContent = m ? m.summary + " " + modelNeeds(m, state.local.memory)[1] + "." : "Your own model file ([translate.server] model).";
 }
 
 function message(text, level = "") {
@@ -414,7 +473,7 @@ function formSettings() {
   }
   return {
     provider,
-    local: { runtime: $("runtime").value, release: $("release").value.trim() || "latest", update: $("update").value },
+    local: { model: $("local-model").value || null, runtime: $("runtime").value, release: $("release").value.trim() || "latest", update: $("update").value },
     remote: { url: $("url").value.trim(), model: $("remote-model").value.trim(), extra },
   };
 }
@@ -459,6 +518,7 @@ async function refresh() {
   } catch {}
 }
 
+$("local-model").addEventListener("change", showModelHelp);
 $("provider").addEventListener("click", (e) => { if (e.target.dataset.provider) showProvider(e.target.dataset.provider); });
 $("log-source").addEventListener("click", (e) => {
   if (!e.target.dataset.source) return;
@@ -472,7 +532,7 @@ $("w-local").addEventListener("click", async () => {
   try {
     const body = {
       provider: "local",
-      local: { runtime: state.local.runtime, release: state.local.release, update: state.local.update },
+      local: { model: chosenModel, runtime: state.local.runtime, release: state.local.release, update: state.local.update },
       remote: { url: state.remote.url, model: state.remote.model, extra: state.remote.extra },
     };
     show(await api("/api/engine", { method: "PUT", body }), false);
@@ -604,8 +664,6 @@ const FIELDS = [
   ["translate", "translate.temperature", "Temperature", "float", "Lower is more literal and consistent (0.1).", 0.05],
   ["translate", "translate.max_tokens", "Max tokens", "int", "Longest answer for one screen."],
   ["translate", "translate.history", "Context", "int", "Past exchanges sent along, for consistent names and tone."],
-  ["translate", "translate.server.model", "Local model", "text", "Hugging Face file (owner/repo:file.gguf), downloaded once. Applies when the local server restarts."],
-  ["translate", "translate.server.draft", "Draft model", "optional", "Speculative decoding, for speed. Empty: none. Applies when the local server restarts."],
   ["render", "render.screen_aspect", "Screen", "select", "RetroArch 1.22 and older stretch the overlay over the whole screen, black bars included: auto reads your screen's shape. Newer versions: game.",
     [["auto", "Auto (from the screen)"], ["game", "The game only"], ["16:9", "16:9"], ["16:10", "16:10"], ["4:3", "4:3"], ["21:9", "21:9"]]],
   ["render", "render.width", "Overlay width", "int", "In pixels; RetroArch scales it to the screen."],

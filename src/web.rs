@@ -86,6 +86,33 @@ async fn engine_state(State(app): State<Arc<App>>) -> Json<Value> {
         .ok()
         .or_else(|| server.as_ref().and_then(|s| s.command.clone()));
     let model = server.as_ref().map(|s| server::model_spec(s, variant.as_ref()).to_owned());
+    let config = app.engine.config();
+    let memory = runtime::Memory::detect();
+    // Without a GPU build, the GPU does not count.
+    let memory = runtime::Memory { gpu: memory.gpu.filter(|_| !matches!(variant, Some(runtime::Variant::Cpu))), ..memory };
+    // Best first, then the bigger ones.
+    let mut sorted: Vec<_> = config.models.iter().collect();
+    sorted.sort_by(|(_, a), (_, b)| {
+        let need = |m: &config::LocalModel| m.gpu_memory.or(m.ram).unwrap_or_default();
+        b.quality.cmp(&a.quality).then(need(b).total_cmp(&need(a)))
+    });
+    let models: Vec<Value> = sorted
+        .into_iter()
+        .map(|(id, m)| {
+            let file = variant.as_ref().and_then(|v| m.files.get(v.family())).unwrap_or(&m.file);
+            json!({
+                "id": id,
+                "name": m.name,
+                "quality": m.quality,
+                "summary": m.summary,
+                "mode": m.mode,
+                "gpu_memory": m.gpu_memory,
+                "ram": m.ram,
+                "size": m.size,
+                "cached": server::is_cached(file),
+            })
+        })
+        .collect();
     let model_size = match &model {
         Some(spec) => server::file_size(&app.client, spec).await,
         None => None,
@@ -102,6 +129,10 @@ async fn engine_state(State(app): State<Arc<App>>) -> Json<Value> {
             "update": settings.local.update,
             "program": program,
             "model": model,
+            "model_id": app.engine.local_model(),
+            "models": models,
+            "memory": memory,
+            "recommended": config::recommend(&config.models, &memory),
             "model_size": model_size,
             "model_cached": model.as_deref().is_some_and(server::is_cached),
             "gpus": runtime::Gpus::detect(),
@@ -145,7 +176,7 @@ struct TestRequest {
 async fn test_engine(State(app): State<Arc<App>>, Json(test): Json<TestRequest>) -> Result<Json<Value>, ApiError> {
     let config = app.engine.config();
     let backend = match test.provider {
-        Provider::Local => config.backend.clone(),
+        Provider::Local => app.engine.local_backend(),
         Provider::Remote => {
             let key = test.api_key.filter(|k| !k.trim().is_empty()).map(|k| k.trim().to_owned()).or_else(|| engine::api_key().map(|(k, _)| k));
             engine::remote_backend(&config.backend, &test.remote, key)

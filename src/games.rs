@@ -256,7 +256,10 @@ async fn correct(State(app): State<Arc<App>>, UrlPath(id): UrlPath<String>, Json
         .edit_game(dir, |path| {
             let mut entries = memory::entries(path);
             match entries.iter_mut().find(|e| e.lang == entry.lang && e.ja == entry.ja) {
-                Some(found) => found.tr = entry.tr.trim().to_owned(),
+                Some(found) => {
+                    found.tr = entry.tr.trim().to_owned();
+                    found.by = Some(memory::BY_USER.into());
+                }
                 None => bail!("this translation is not in the memory any more"),
             }
             memory::save_entries(path, &entries).context("cannot save the memory")

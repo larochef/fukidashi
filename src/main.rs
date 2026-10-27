@@ -7,7 +7,7 @@
 //! Usage:
 //!   fukidashi [--config FILE] [serve]
 //!   fukidashi [--config FILE] open | stop
-//!   fukidashi [--config FILE] setup local | setup remote URL MODEL [--key KEY]
+//!   fukidashi [--config FILE] setup local [MODEL] | setup remote URL MODEL [--key KEY]
 //!   fukidashi --version
 //!   fukidashi [--config FILE] replay [--lang CODE] [--label LABEL] [--ocr-only] [--out DIR] [--fixtures DIR] CAPTURE.png...
 //!   fukidashi [--config FILE] bench [--lang CODE] CASES.toml
@@ -297,7 +297,9 @@ Commands:
                extension call it, its settings page is at http://localhost:4404/
   open         Open the settings page, starting the app first if needed
   stop         Stop the app
-  setup local  Use the local model, and download it now (~16 GB)
+  setup local [MODEL]
+               Use a local model (by default the one for this computer, see
+               [translate.models]), and download it now (2 to 18 GB)
   setup remote URL MODEL [--key KEY]
                Use an OpenAI-compatible provider (the key can also come from
                the FUKIDASHI_API_KEY environment variable)

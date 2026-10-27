@@ -11,7 +11,7 @@ use regex::Regex;
 use serde_json::json;
 
 use crate::{
-    config::{Backend, Profile, TranslateConfig},
+    config::{Backend, Mode, Profile, TranslateConfig},
     llm,
     memory::{GameMemory, safe_name},
 };
@@ -62,6 +62,18 @@ impl Translator {
             return Ok((results.into_iter().map(Option::unwrap_or_default).collect(), cached));
         }
 
+        if backend.mode == Mode::Translate {
+            let texts_sent: Vec<&str> = missing.iter().map(|&i| texts[i].as_str()).collect();
+            let translations = self.translate_blocks(backend, profile, &learned, lang, &texts_sent).await?;
+            let mut state = self.state.lock().unwrap();
+            let game = self.game(&mut state, label);
+            for (&i, translation) in missing.iter().zip(translations) {
+                game.remember(lang, &texts[i], &translation, &backend.model);
+                results[i] = Some(translation);
+            }
+            return Ok((results.into_iter().map(Option::unwrap_or_default).collect(), cached));
+        }
+
         // Blocks are keyed by id: tying each answer to an id (rather than to a
         // position in a list) keeps the model from sliding text into the next slot.
         let blocks: serde_json::Map<String, serde_json::Value> =
@@ -106,7 +118,7 @@ impl Translator {
         let mut state = self.state.lock().unwrap();
         let game = self.game(&mut state, label);
         for (&i, translation) in missing.iter().zip(&parsed) {
-            game.remember(lang, &texts[i], translation);
+            game.remember(lang, &texts[i], translation, &backend.model);
             results[i] = Some(translation.clone());
         }
         let added = game.learn_names(names);
@@ -123,6 +135,35 @@ impl Translator {
         }
 
         Ok((results.into_iter().map(Option::unwrap_or_default).collect(), cached))
+    }
+
+    /// A translation model: each block on its own, all at once (the server
+    /// serves them in parallel), with the names and glossary entries it uses.
+    /// Its line breaks only follow the width of the game's text box: they
+    /// become spaces.
+    async fn translate_blocks(
+        &self,
+        backend: &Backend,
+        profile: Option<&Profile>,
+        learned: &BTreeMap<String, String>,
+        lang: &str,
+        texts: &[&str],
+    ) -> anyhow::Result<Vec<String>> {
+        // A model looping on line breaks: plain text here, not JSON.
+        let breaks = "\n".repeat(8);
+        let breaks = breaks.as_str();
+        let requests = texts.iter().map(|text| {
+            let text = text.replace('⏎', "\n");
+            let prompt = backend
+                .prompt
+                .replace("{terms}", &terms(&text, profile, learned))
+                .replace("{lang}", language_name(lang))
+                .replace("{text}", &text);
+            let messages = vec![json!({ "role": "user", "content": prompt })];
+            async move { llm::chat(&self.client, backend, messages, None, &[breaks]).await }
+        });
+        let answers = futures_util::future::try_join_all(requests).await?;
+        Ok(answers.iter().map(|answer| clean(&answer.replace('\n', " "))).collect())
     }
 
     /// Where a game's memory is saved (`None`: memory disabled).
@@ -194,6 +235,42 @@ fn with_known_names(request: &str, learned: &BTreeMap<String, String>, profile: 
     }
     format!("Names already used in this game: {}\n{request}", known.join(", "))
 }
+
+/// The glossary entries, learned names and forms of address a block uses,
+/// for a translation model: "Reference the following translations:" and one
+/// `X translates to Y` line each, or nothing.
+fn terms(text: &str, profile: Option<&Profile>, learned: &BTreeMap<String, String>) -> String {
+    let glossary = profile.map(|p| &p.glossary).into_iter().flatten();
+    let address = ADDRESS.iter().map(|(ja, tr)| (*ja, *tr));
+    let mut seen = std::collections::HashSet::new();
+    let lines: Vec<String> = glossary
+        .chain(learned)
+        .map(|(ja, tr)| (ja.as_str(), tr.as_str()))
+        .chain(address)
+        .filter(|(ja, _)| text.contains(ja) && seen.insert(*ja))
+        .map(|(ja, tr)| format!("{ja} translates to {tr}"))
+        .collect();
+    if lines.is_empty() {
+        return String::new();
+    }
+    format!("Reference the following translations:\n{}\n\n", lines.join("\n"))
+}
+
+/// Forms of address kept as they are, which translation models otherwise turn
+/// into "Miss", "Mr." or "brother".
+const ADDRESS: &[(&str, &str)] = &[
+    ("お兄ちゃん", "Onii-chan"),
+    ("お姉ちゃん", "Onee-chan"),
+    ("お兄さん", "Onii-san"),
+    ("お姉さん", "Onee-san"),
+    ("先輩", "Senpai"),
+    ("先生", "Sensei"),
+    ("さん", "-san"),
+    ("くん", "-kun"),
+    ("君", "-kun"),
+    ("ちゃん", "-chan"),
+    ("様", "-sama"),
+];
 
 /// Words games show in place of a speaker's name, which models tend to return
 /// as names: learned, they would stay in romaji ("Onna no ko") everywhere.
@@ -400,7 +477,9 @@ fn parse_numbered(answer: &str, expected: usize) -> Vec<String> {
 
 #[cfg(test)]
 mod tests {
-    use super::{clean, parse, strip_json_debris};
+    use std::collections::BTreeMap;
+
+    use super::{clean, parse, strip_json_debris, terms};
 
     #[test]
     fn drops_loops() {
@@ -437,6 +516,16 @@ mod tests {
         assert_eq!(strip_json_debris("“Especially in the morning.”\n\"names\":"), "“Especially in the morning.”");
         assert_eq!(strip_json_debris("“Hi.”\", \"2\": \"Bye.\"}"), "“Hi.”");
         assert_eq!(strip_json_debris("“There, your bag.”\"}``` (Note: a typo.) 💡 💡"), "“There, your bag.”");
+    }
+
+    #[test]
+    fn gives_translation_models_the_terms_a_block_uses() {
+        let learned = BTreeMap::from([("星乃".to_owned(), "Hoshino".to_owned()), ("菜々".to_owned(), "Nana".to_owned())]);
+        assert_eq!(
+            terms("相原「星乃さんって、和食と洋食」", None, &learned),
+            "Reference the following translations:\n星乃 translates to Hoshino\nさん translates to -san\n\n"
+        );
+        assert_eq!(terms("休養", None, &learned), "");
     }
 
     #[test]

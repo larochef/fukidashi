@@ -7,9 +7,11 @@ use anyhow::{Context, bail};
 use serde_json::json;
 
 use crate::{
-    config::{Config, Provider, RemoteConfig, cache_dir},
+    config::{Config, Provider, RemoteConfig, cache_dir, recommend},
     engine::{self, API_KEY_ENV, Engine},
-    is_running, take_option,
+    is_running,
+    runtime::Memory,
+    take_option,
 };
 
 /// The user service the packages install.
@@ -96,8 +98,9 @@ pub async fn stop(url: &str) -> anyhow::Result<()> {
     Ok(())
 }
 
-/// `setup local`: the local model, downloaded now. `setup remote URL MODEL
-/// [--key KEY]`: an OpenAI-compatible provider. A running app applies the
+/// `setup local [MODEL]`: a local model (by default the one proposed for this
+/// computer), downloaded now. `setup remote URL MODEL [--key KEY]`: an
+/// OpenAI-compatible provider. A running app applies the
 /// choice at once (and downloads the model itself, its page showing the
 /// progress); otherwise it is saved, and the model downloaded here.
 pub async fn setup(url: &str, config: &Config, mut args: Vec<String>) -> anyhow::Result<()> {
@@ -105,8 +108,19 @@ pub async fn setup(url: &str, config: &Config, mut args: Vec<String>) -> anyhow:
     let key = take_option(&mut args, "--key");
     let engine = Engine::new(client.clone(), &config.translate)?;
     let mut settings = engine.settings();
+    let models = &config.translate.models;
     match args.iter().map(String::as_str).collect::<Vec<_>>().as_slice() {
-        ["local"] => settings.provider = Provider::Local,
+        ["local"] => {
+            settings.provider = Provider::Local;
+            let memory = Memory::detect();
+            let model = recommend(models, &memory).context("no local model fits this computer: name one")?;
+            println!("Model for this computer: {} ({}).", models[model].name, model);
+            settings.local.model = Some(model.to_owned());
+        }
+        ["local", model] => {
+            settings.provider = Provider::Local;
+            settings.local.model = Some((*model).to_owned());
+        }
         ["remote", provider_url, model] => {
             settings.provider = Provider::Remote;
             settings.remote = RemoteConfig { url: (*provider_url).to_owned(), model: (*model).to_owned(), extra: settings.remote.extra.clone() };
@@ -114,7 +128,10 @@ pub async fn setup(url: &str, config: &Config, mut args: Vec<String>) -> anyhow:
                 println!("No API key given (--key or {API_KEY_ENV}): fine for a server that needs none.");
             }
         }
-        _ => bail!("usage: fukidashi setup local | fukidashi setup remote URL MODEL [--key KEY]"),
+        _ => {
+            let ids: Vec<&str> = models.keys().map(String::as_str).collect();
+            bail!("usage: fukidashi setup local [{}] | fukidashi setup remote URL MODEL [--key KEY]", ids.join("|"))
+        }
     }
 
     if is_running(&client, url).await {
@@ -134,7 +151,7 @@ pub async fn setup(url: &str, config: &Config, mut args: Vec<String>) -> anyhow:
         return Ok(());
     }
 
-    engine::save_choice(&settings, key)?;
+    engine::save_choice(&settings, key, models)?;
     match settings.provider {
         Provider::Local => {
             println!("Saved. Downloading the local model now (once; it can take a while)…");

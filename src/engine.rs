@@ -13,6 +13,7 @@
 //! stops after `idle_minutes` without one, freeing the GPU memory.
 
 use std::{
+    collections::BTreeMap,
     path::PathBuf,
     sync::{
         Arc, RwLock,
@@ -27,7 +28,7 @@ use tokio::sync::Mutex;
 use tracing::{info, warn};
 
 use crate::{
-    config::{Backend, Provider, RemoteConfig, ServerConfig, TranslateConfig, Update, config_dir},
+    config::{Backend, LocalModel, Mode, Provider, RemoteConfig, ServerConfig, TranslateConfig, Update, config_dir},
     server::{self, ManagedServer},
 };
 
@@ -43,9 +44,12 @@ pub struct Settings {
     pub remote: RemoteConfig,
 }
 
-/// The llama.cpp build to run (see `runtime`).
+/// The local model and the llama.cpp build to run it (see `runtime`).
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct LocalSettings {
+    /// A model of `[translate.models]`; absent: `[translate.server] model`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub model: Option<String>,
     pub runtime: String,
     pub release: String,
     pub update: Update,
@@ -95,8 +99,8 @@ impl Engine {
             None => Settings {
                 provider: config.provider,
                 local: config.server.as_ref().map_or_else(
-                    || LocalSettings { runtime: "auto".into(), release: "latest".into(), update: Update::Auto },
-                    |s| LocalSettings { runtime: s.runtime.clone(), release: s.release.clone(), update: s.update },
+                    || LocalSettings { model: None, runtime: "auto".into(), release: "latest".into(), update: Update::Auto },
+                    |s| LocalSettings { model: None, runtime: s.runtime.clone(), release: s.release.clone(), update: s.update },
                 ),
                 remote: config.remote.clone(),
             },
@@ -144,20 +148,53 @@ impl Engine {
     /// The endpoint translations go to, with its key.
     pub fn backend(&self) -> Backend {
         let settings = self.settings.read().unwrap();
-        let config = self.config.read().unwrap();
-        match settings.provider {
-            Provider::Local => config.backend.clone(),
-            Provider::Remote => remote_backend(&config.backend, &settings.remote, api_key().map(|(key, _)| key)),
+        if settings.provider == Provider::Remote {
+            let config = self.config.read().unwrap();
+            return remote_backend(&config.backend, &settings.remote, api_key().map(|(key, _)| key));
         }
+        drop(settings);
+        self.local_backend()
     }
 
-    /// The `[translate.server]` settings with the page's choices.
+    /// The local model's endpoint, asked as the model in use wants.
+    pub fn local_backend(&self) -> Backend {
+        let settings = self.settings.read().unwrap();
+        let config = self.config.read().unwrap();
+        let mut backend = config.backend.clone();
+        let id = local_model_id(&config, &settings);
+        if let Some(model) = config.models.get(&id) {
+            // The id names the model in the requests, and in the memory.
+            backend.model = id;
+            backend.temperature = model.temperature.unwrap_or(backend.temperature);
+            backend.extra.extend(model.request.clone());
+            backend.mode = model.mode;
+            backend.prompt = model.prompt.clone();
+        }
+        backend
+    }
+
+    /// The local model in use: an id of `[translate.models]`, or a file of
+    /// the user's own.
+    pub fn local_model(&self) -> String {
+        local_model_id(&self.config.read().unwrap(), &self.settings.read().unwrap())
+    }
+
+    /// The `[translate.server]` settings with the page's choices and the
+    /// chosen model's files and arguments.
     pub fn server_config(&self) -> Option<ServerConfig> {
-        let local = self.settings.read().unwrap().local.clone();
-        self.config.read().unwrap().server.clone().map(|mut server| {
-            server.runtime = local.runtime;
-            server.release = local.release;
+        let settings = self.settings.read().unwrap();
+        let config = self.config.read().unwrap();
+        let local = &settings.local;
+        config.server.clone().map(|mut server| {
+            server.runtime = local.runtime.clone();
+            server.release = local.release.clone();
             server.update = local.update;
+            if let Some(model) = config.models.get(&local_model_id(&config, &settings)) {
+                server.model = model.file.clone();
+                server.models = model.files.clone();
+                server.draft = model.draft.clone();
+                server.args.extend(model.args.iter().cloned());
+            }
             server
         })
     }
@@ -314,15 +351,19 @@ impl Engine {
     /// Applies and saves new settings; `api_key`: `None` keeps the saved key,
     /// an empty one removes it.
     pub async fn update(self: &Arc<Self>, settings: Settings, api_key: Option<String>) -> anyhow::Result<()> {
-        save_choice(&settings, api_key)?;
+        save_choice(&settings, api_key, &self.config.read().unwrap().models)?;
+        let model = self.local_model();
         let previous = std::mem::replace(&mut *self.settings.write().unwrap(), settings.clone());
         let first = !self.configured.swap(true, Ordering::Relaxed);
-        info!(provider = ?settings.provider, "engine settings saved");
+        let model_changed = self.local_model() != model;
+        info!(provider = ?settings.provider, model = self.local_model(), "engine settings saved");
         match (previous.provider, settings.provider) {
             (Provider::Local, Provider::Remote) => self.stop().await,
             // The local model just chosen: downloaded and loaded now, rather
             // than during the first translation.
             (_, Provider::Local) if first || previous.provider == Provider::Remote => self.start_in_background(),
+            // Another local model: the running one makes way for it.
+            (Provider::Local, Provider::Local) if model_changed => self.restart().await,
             _ if first => self.set_status(Status::Stopped),
             _ => {}
         }
@@ -332,8 +373,8 @@ impl Engine {
 
 /// Checks and saves an engine choice (`api_key` as for `Engine::update`),
 /// without applying it: for `fukidashi setup` while the app is not running.
-pub fn save_choice(settings: &Settings, api_key: Option<String>) -> anyhow::Result<()> {
-    validate(settings)?;
+pub fn save_choice(settings: &Settings, api_key: Option<String>, models: &BTreeMap<String, LocalModel>) -> anyhow::Result<()> {
+    validate(settings, models)?;
     if let Some(key) = api_key {
         save_api_key(key.trim())?;
     }
@@ -361,11 +402,24 @@ pub fn remote_backend(local: &Backend, remote: &RemoteConfig, api_key: Option<St
         max_tokens: local.max_tokens,
         extra: remote.extra.clone(),
         api_key,
+        mode: Mode::Chat,
+        prompt: String::new(),
     }
 }
 
-fn validate(settings: &Settings) -> anyhow::Result<()> {
+/// The local model of these settings: the chosen one, else the configured one.
+fn local_model_id(config: &TranslateConfig, settings: &Settings) -> String {
+    settings.local.model.clone().or_else(|| config.server.as_ref().map(|s| s.model.clone())).unwrap_or_default()
+}
+
+fn validate(settings: &Settings, models: &BTreeMap<String, LocalModel>) -> anyhow::Result<()> {
     crate::runtime::variant(&settings.local.runtime)?;
+    if let Some(model) = &settings.local.model
+        && !models.contains_key(model)
+    {
+        let known: Vec<&str> = models.keys().map(String::as_str).collect();
+        bail!("unknown model \"{model}\": expected one of {}", known.join(", "));
+    }
     let release = &settings.local.release;
     if release != "latest" && !(release.starts_with('b') && release[1..].parse::<u64>().is_ok()) {
         bail!("release must be \"latest\" or a tag like b11856, got \"{release}\"");
@@ -469,6 +523,8 @@ mod tests {
             max_tokens: 512,
             extra: Default::default(),
             api_key: None,
+            mode: Default::default(),
+            prompt: String::new(),
         };
         let remote = |url: &str| RemoteConfig { url: url.into(), model: " google/gemma-4-26b-a4b-it ".into(), extra: Default::default() };
         let backend = remote_backend(&local, &remote("https://openrouter.ai/api/v1/"), Some("key".into()));

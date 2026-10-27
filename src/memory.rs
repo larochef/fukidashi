@@ -2,7 +2,8 @@
 //! already translated, and the romaji chosen for each name.
 //!
 //! Files live in `<data_dir>/<game label>/`:
-//! - `memory.jsonl`: one `{"lang", "ja", "tr"}` line per translated block, appended;
+//! - `memory.jsonl`: one `{"lang", "ja", "tr", "by"}` line per translated block,
+//!   appended (`by`: the model that translated it, or `user` once corrected);
 //! - `glossary.toml`: names learned from the translations, meant to be read and
 //!   corrected by hand (`[glossary]` table, same format as game profiles).
 
@@ -29,7 +30,13 @@ pub struct Entry {
     pub lang: String,
     pub ja: String,
     pub tr: String,
+    /// The model that made the translation, or [`BY_USER`]; absent in older memories.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub by: Option<String>,
 }
+
+/// `by` of a translation corrected by hand.
+pub const BY_USER: &str = "user";
 
 #[derive(Default, Serialize, Deserialize)]
 struct GlossaryFile {
@@ -63,12 +70,12 @@ impl GameMemory {
         self.translations.get(&(lang.to_owned(), ja.to_owned()))
     }
 
-    pub fn remember(&mut self, lang: &str, ja: &str, tr: &str) {
+    pub fn remember(&mut self, lang: &str, ja: &str, tr: &str, by: &str) {
         if tr.is_empty() {
             return;
         }
         self.translations.insert((lang.to_owned(), ja.to_owned()), tr.to_owned());
-        let line = serde_json::to_string(&Entry { lang: lang.into(), ja: ja.into(), tr: tr.into() }).unwrap_or_default();
+        let line = serde_json::to_string(&Entry { lang: lang.into(), ja: ja.into(), tr: tr.into(), by: Some(by.into()) }).unwrap_or_default();
         self.write(|dir| {
             let mut file = std::fs::OpenOptions::new().create(true).append(true).open(dir.join("memory.jsonl"))?;
             writeln!(file, "{line}")

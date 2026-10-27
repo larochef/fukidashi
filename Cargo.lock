@@ -848,6 +848,7 @@ dependencies = [
  "axum",
  "base64 0.22.1",
  "flate2",
+ "futures-util",
  "hf-hub",
  "image",
  "oar-ocr",

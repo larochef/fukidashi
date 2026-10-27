@@ -25,14 +25,14 @@ RetroArch core, in fullscreen, without screen capture or overlay windows.
 - **Linux x86-64**, glibc 2.39 or newer (Ubuntu 24.04, Debian 13, Fedora 40 or later), with a GPU driver: Mesa (AMD, Intel) or the NVIDIA driver (570 or
   newer for CUDA). Other systems: bring your own `llama-server` (see Configuration).
 - **RetroArch** (a recent version, with the AI Service and the Vulkan or GL video driver).
-- **Memory**: the default translation model (Gemma 4 26B-A4B, 4-bit) runs best
-  with about 18 GB of GPU or unified memory free, on top of the game. With less
-  (a 8 to 16 GB graphics card), llama.cpp keeps part of the model in RAM: slower,
-  but it works, as long as GPU and RAM together hold it. OCR runs on the CPU.
+- **Memory**: depends on the translation model, which the first start proposes
+  from what the computer has (see [Translation models](#translation-models)):
+  from 16 GB of GPU or unified memory for the best one down to a 4 GB graphics
+  card, or no GPU at all. OCR runs on the CPU.
 
 The OCR models (~90 MB) are downloaded on first start. The local translation
 model is only downloaded once you choose it (see First start): a prebuilt
-llama.cpp fitting the GPU (into `~/.cache/fukidashi`) and the model (~16 GB,
+llama.cpp fitting the GPU (into `~/.cache/fukidashi`) and the model (2 to 18 GB,
 into the Hugging Face cache, `~/.cache/huggingface`, shared with other tools).
 A remote provider needs neither.
 
@@ -72,14 +72,37 @@ Open **Fukidashi** from the applications menu (or run `fukidashi open`): the
 app starts and its page opens at <http://localhost:4404/>, on Getting started.
 Choose where the text is translated:
 
-- **On this computer**: the page shows the GPU found and the model's size,
-  and downloads it when you choose it, with its progress;
+- **On this computer**: the page shows the GPU and memory found and the local
+  models, the one fitting this computer first, and downloads the chosen one,
+  with its progress;
 - **With a provider**: any OpenAI-compatible endpoint, nothing to download.
 
 The same page offers to start Fukidashi when you log in, and, on GNOME, to
 enable the extension (installed by a package: log out and back in, or restart, first; see
-[GNOME extension](#gnome-extension)). In a terminal: `fukidashi setup local`, or
+[GNOME extension](#gnome-extension)). In a terminal: `fukidashi setup local`
+(the model for this computer) or `fukidashi setup local MODEL`, or
 `fukidashi setup remote URL MODEL --key KEY`.
+
+### Translation models
+
+| Model | Proposed for | Quality | Download |
+|---|---|---|---|
+| Gemma 4 26B-A4B (`gemma-4-26b`) | 16 GB of GPU or unified memory and more | ★★★★★ | 17.5 GB |
+| Hy-MT2 7B (`hy-mt2-7b`) | 6 to 16 GB graphics cards | ★★★★☆ | 4.6 GB |
+| Hy-MT2 1.8B (`hy-mt2-1-8b`) | 3 to 6 GB graphics cards; no GPU and less than 28 GB of RAM | ★★☆☆☆ | 1.9 GB |
+| Hy-MT2 30B-A3B (`hy-mt2-30b`) | no GPU, 28 GB of RAM or more | ★★★★☆ | 18.2 GB |
+
+Gemma is a chat model: it translates the whole screen in one request, follows
+the conversation (the previous lines) and learns the characters' names as it
+reads them. The Hy-MT2 models only translate: each text alone, faster and
+lighter, with no context, and they cannot tell names; they use the ones in the
+game's profile and in its Names tab (learned by Gemma, or written there), and
+keep forms of address (-san, Onii-chan, Senpai) as they are.
+
+Measured on a Strix Halo, per screen: Gemma 1.1 s; Hy-MT2 7B 0.8 s; Hy-MT2
+1.8B 0.4 s, 1.2 s without the GPU; Hy-MT2 30B-A3B 3 s without the GPU. A common
+computer without a GPU is several times slower. The models are defined in
+`[translate.models]` of `config.toml`, where you can add your own.
 
 ## Running
 
@@ -191,7 +214,7 @@ while the app runs:
 
 - **Getting started**: the engine to use (shown first until one is chosen),
   starting with the session, the GNOME extension.
-- **Local model**: the GPU found, the llama.cpp build in use and the ones kept,
+- **Local model**: the model (see [Translation models](#translation-models)), the GPU found, the llama.cpp build in use and the ones kept,
   update settings, a button to look for a newer build, the server log.
 - **Remote provider**: any OpenAI-compatible endpoint (OpenRouter, a server on
   another machine) with its model and API key; only the text of the screen is
@@ -223,8 +246,10 @@ only what differs from the shipped settings, so improvements to the shipped
 ones (the prompt above all) still reach you. `--config FILE` uses another file
 of your settings instead.
 
-- **Another model or server**: edit `[translate]` (any OpenAI-compatible
-  endpoint works). A server of your own answering on `url` is used as is.
+- **Another model or server**: add a model to `[translate.models]` (or set
+  `[translate.server] model` to an `owner/repo:file` of your own), or edit
+  `[translate]` (any OpenAI-compatible endpoint works). A server of your own
+  answering on `url` is used as is.
 - **llama.cpp build**: `[translate.server]` sets the kind of build (`runtime`),
   pins a release (`release = "b11856"`) or turns updates off or to a log line
   (`update`). To run your own build: `command = "/path/to/llama-server"`, or
@@ -295,7 +320,8 @@ saved in `~/.local/share/fukidashi/data/<game>/` (`data_dir`):
 - OCR: [PaddleOCR](https://github.com/PaddlePaddle/PaddleOCR) PP-OCRv6 models
   through [oar-ocr](https://github.com/GreatV/oar-ocr).
 - Translation: any model served by [llama.cpp](https://github.com/ggml-org/llama.cpp);
-  default [Gemma 4 26B-A4B](https://huggingface.co/unsloth/gemma-4-26b-a4b-it-GGUF).
+  [Gemma 4 26B-A4B](https://huggingface.co/unsloth/gemma-4-26b-a4b-it-GGUF) (Google) and the
+  [Hy-MT2](https://huggingface.co/tencent/Hy-MT2-7B-GGUF) translation models (Tencent).
 - Fonts: [Noto Sans](https://github.com/notofonts/latin-greek-cyrillic) (`assets/fonts/OFL.txt`)
   and [Noto Sans JP](https://github.com/notofonts/noto-cjk) for symbols and Japanese
   (`assets/fonts/OFL-NotoSansJP.txt`), SIL Open Font License 1.1, embedded in the binary.

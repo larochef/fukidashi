@@ -39,7 +39,6 @@ temperature = 0.1
 max_tokens = 512
 # Number of past exchanges kept as context; trimmed to half when exceeded.
 history = 16
-extra = { chat_template_kwargs = { enable_thinking = false } }
 system_prompt = """
 You translate Japanese video game text into natural {lang} for a player who is learning Japanese.
 Rules:
@@ -62,8 +61,7 @@ url = "https://openrouter.ai/api/v1"
 model = "google/gemma-4-26b-a4b-it"
 
 # Started by the app when nothing answers on `url` (a server of your own
-# answering there is used as is). Models are `owner/repo:file` on Hugging Face, downloaded once
-# into the Hugging Face cache.
+# answering there is used as is), with one of the models below.
 [translate.server]
 # llama.cpp build, downloaded once into ~/.cache/fukidashi/runtimes:
 # "auto" picks it from the GPU (strix: ROCm for AMD Strix Halo; cuda: NVIDIA;
@@ -77,25 +75,105 @@ release = "latest"
 # for the next start (back to the previous one if it fails to start), "notify"
 # only says so in the log, "off" never looks.
 update = "auto"
-model = "unsloth/gemma-4-26b-a4b-it-GGUF:gemma-4-26B-A4B-it-UD-Q4_K_XL.gguf"
-# Model for one kind of build: FP4 runs natively on recent NVIDIA GPUs.
-models = { cuda = "unsloth/gemma-4-26b-a4b-it-GGUF:gemma-4-26B-A4B-it-MXFP4_MOE.gguf" }
-# Speculative decoding (multi-token prediction); dropped if your llama.cpp rejects it.
-draft = "unsloth/gemma-4-26b-a4b-it-GGUF:MTP/mtp-gemma-4-26B-A4B-it-Q8_0.gguf"
+# A model of [translate.models] below; the one chosen in the page takes
+# precedence. Or a file of your own, "owner/repo:file.gguf" on Hugging Face,
+# asked like a chat model (its draft model in `draft`).
+model = "gemma-4-26b"
+# Arguments of the draft model used for speculative decoding (dropped if your
+# llama.cpp rejects it).
 draft_args = ["--spec-type", "draft-mtp", "-ngld", "999"]
 # Minutes without a translation after which the server stops, freeing the GPU
 # memory; the next translation starts it again (a few seconds). 0: never.
 idle_minutes = 30
-# Thinking off: Gemma 4 otherwise spends its token budget reasoning.
-# No -ngl: llama.cpp fits the model to the GPU memory free when it starts (the
-# game's included): all of it on the GPU when it fits, else part of the MoE
-# experts in RAM, slower but working. --fit-target is the GPU memory it leaves
-# free, in MiB: enough for the draft model, which it does not count.
-# Flash attention: "auto" turns it on wherever the GPU supports it.
-args = [
-    "-c", "16384", "-np", "1", "-fa", "auto", "--fit-target", "1536", "--no-webui",
-    "--reasoning-budget", "0", "--chat-template-kwargs", '{"enable_thinking":false}',
-]
+# For every model (each adds its own `args`). No -ngl: llama.cpp fits the model
+# to the GPU memory free when it starts (the game's included): all of it on the
+# GPU when it fits, else part of it in RAM (MoE experts first), slower but
+# working. --fit-target is the GPU memory it leaves free, in MiB: enough for a
+# draft model, which it does not count. Flash attention: "auto" turns it on
+# wherever the GPU supports it.
+args = ["-fa", "auto", "--fit-target", "1536", "--no-webui"]
+
+# The local models offered in the page, which proposes the best one fitting the
+# computer: `gpu_memory` (GB of GPU memory it runs well with) or, without a
+# GPU, `ram` (GB of RAM; absent: too slow without a GPU). Files are
+# "owner/repo:file" on Hugging Face, downloaded once into its cache; `files`
+# replaces `file` for one kind of build. `quality` (1 to 5) and `summary` are
+# shown in the page.
+#
+# Two kinds of models:
+# - mode = "chat" (instruction models): the whole screen in one request (JSON),
+#   with the previous lines as context and [translate] system_prompt as
+#   instructions; they also return the character names they read, learned for
+#   the next screens.
+# - mode = "translate" (translation models): one request per block, `prompt`,
+#   where {terms} becomes the glossary entries and names already known that the
+#   block uses, {lang} the target language, {text} the block. No context and no
+#   names learned: write them in the game's profile or its Names tab.
+
+[translate.models.gemma-4-26b]
+name = "Gemma 4 26B-A4B"
+quality = 5
+summary = "Natural translations that keep each character's voice. Reads the whole screen at once, follows the conversation and learns character names."
+gpu_memory = 16
+size = 17.5
+mode = "chat"
+file = "unsloth/gemma-4-26b-a4b-it-GGUF:gemma-4-26B-A4B-it-UD-Q4_K_XL.gguf"
+# FP4 runs natively on recent NVIDIA GPUs.
+files = { cuda = "unsloth/gemma-4-26b-a4b-it-GGUF:gemma-4-26B-A4B-it-MXFP4_MOE.gguf" }
+# Speculative decoding (multi-token prediction).
+draft = "unsloth/gemma-4-26b-a4b-it-GGUF:MTP/mtp-gemma-4-26B-A4B-it-Q8_0.gguf"
+# Thinking off: Gemma 4 otherwise spends its token budget reasoning. One slot:
+# each request reuses the cached prompt of the previous one.
+args = ["-c", "16384", "-np", "1", "--reasoning-budget", "0", "--chat-template-kwargs", '{"enable_thinking":false}']
+request = { chat_template_kwargs = { enable_thinking = false } }
+
+# Hy-MT2 (Tencent): translation models, with the sampling of their model card.
+# Four slots: the blocks of a screen are translated in parallel.
+[translate.models.hy-mt2-30b]
+name = "Hy-MT2 30B-A3B"
+quality = 4
+summary = "Translation model: very good translations, close to Gemma 4 26B, and fast without a GPU given enough RAM. Translates each text alone: character names come from the game's profile or its Names tab."
+ram = 28
+size = 18.2
+mode = "translate"
+file = "tencent/Hy-MT2-30B-A3B-GGUF:Hy-MT2-30B-A3B-Q4_K_M.gguf"
+args = ["-c", "8192", "-np", "4"]
+temperature = 0.7
+request = { top_p = 1.0, top_k = 0, repeat_penalty = 1.0 }
+prompt = """{terms}Translate the following text into {lang}. Note that you must ONLY output the translated result without any additional explanation:
+
+{text}"""
+
+[translate.models.hy-mt2-7b]
+name = "Hy-MT2 7B"
+quality = 4
+summary = "Translation model: good, natural translations, fast on an 8 GB graphics card. Translates each text alone: character names come from the game's profile or its Names tab."
+gpu_memory = 6
+size = 4.6
+mode = "translate"
+file = "tencent/Hy-MT2-7B-GGUF:Hy-MT2-7B-Q4_K_M.gguf"
+args = ["-c", "8192", "-np", "4"]
+temperature = 0.7
+request = { top_p = 0.6, top_k = 20, repeat_penalty = 1.05 }
+prompt = """{terms}Translate the following text into {lang}. Note that you must ONLY output the translated result without any additional explanation:
+
+{text}"""
+
+[translate.models.hy-mt2-1-8b]
+name = "Hy-MT2 1.8B"
+quality = 2
+summary = "Small translation model: understandable, with mistakes in meaning; for small graphics cards or computers without one. Translates each text alone: character names come from the game's profile or its Names tab."
+gpu_memory = 3
+ram = 8
+size = 1.9
+mode = "translate"
+file = "tencent/Hy-MT2-1.8B-GGUF:Hy-MT2-1.8B-Q8_0.gguf"
+args = ["-c", "8192", "-np", "4"]
+temperature = 0.7
+request = { top_p = 0.6, top_k = 20, repeat_penalty = 1.05 }
+prompt = """{terms}Translate the following text into {lang}. Note that you must ONLY output the translated result without any additional explanation:
+
+{text}"""
 
 [render]
 # Font for the translations (bundled Noto Sans Bold when unset; the bundled
