@@ -230,7 +230,11 @@ while the app runs:
 - **Games**: every game met (or with a profile). Its translations, newest
   first, by language and by text: correct one (it is used as is from then on)
   or delete it (translated again next time); the names it learned; its profile
-  (instructions, styles, glossary, OCR fixes), created here when it has none.
+  (instructions, styles, glossary, OCR fixes), created here when it has none;
+  its translations shared with other players (see
+  [Sharing translations](#sharing-translations)). "Delete this game" forgets
+  one (a window translated by mistake with the GNOME extension, say): its
+  translations and names, not its profile.
 
 Choices made in the page are saved in `~/.config/fukidashi/engine.toml`
 and override `config.toml`; the API key goes to `secrets.toml` next to it,
@@ -282,9 +286,26 @@ profile lists the styles it uses. They ship in `styles/`; yours go in
 While serving, every translated block and every name the model transcribed is
 saved in `~/.local/share/fukidashi/data/<game>/` (`data_dir`):
 
-- `memory.jsonl`: past translations, reused instantly (also across sessions);
+- `memory.jsonl`: past translations, reused instantly (also across sessions).
+  A text the OCR read slightly differently (a misread character in ten at
+  most, the same numbers, ten characters or more) reuses the translation too;
 - `glossary.toml`: names learned along the way. Fix a wrong reading here once
   and it is used from then on.
+
+### Sharing translations
+
+In the Games page, a game's Translations tab exports its translations (in the
+language shown, or all of them) and learned names as a
+`<game>.fukidashi.json` pack, and imports another player's: the model is then
+only asked for the texts nobody has translated yet. Import a pack into the
+same game as you play it (the page shows the game the pack comes from).
+Nothing of yours is lost: your corrections are never replaced, a correction in
+the pack replaces a model's translation, the other translations already there
+stay, and the names you have keep their reading.
+
+A pack holds the game's Japanese text alongside its translation: share packs
+the way fan translation patches are shared, not as a way to publish a game's
+script.
 
 ## Development
 

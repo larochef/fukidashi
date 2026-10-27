@@ -36,9 +36,12 @@
   label { color: var(--muted); font-size: 13px; }
   input, select, textarea { font: inherit; color: var(--text); background: var(--input); border: 1px solid var(--line); border-radius: 6px; padding: 7px 10px; width: 100%; }
   textarea { font-family: ui-monospace, monospace; font-size: 13px; min-height: 60px; }
-  button { font: inherit; border: 1px solid var(--line); background: var(--panel); color: var(--text); border-radius: 6px; padding: 7px 14px; cursor: pointer; }
+  button, a.button { font: inherit; border: 1px solid var(--line); background: var(--panel); color: var(--text); border-radius: 6px; padding: 7px 14px; cursor: pointer; }
+  a.button { display: inline-block; text-decoration: none; }
   button.primary { background: var(--accent); color: var(--accent-text); border-color: var(--accent); font-weight: 600; }
   button:disabled { opacity: .5; cursor: default; }
+  button.danger { color: var(--bad); }
+  .game-head { display: flex; gap: 12px; justify-content: space-between; align-items: start; flex-wrap: wrap; }
   .segmented { display: inline-flex; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; }
   .segmented button { border: 0; border-radius: 0; padding: 8px 16px; }
   .segmented button.on { background: var(--accent); color: var(--accent-text); font-weight: 600; }
@@ -878,10 +881,23 @@ function showGame() {
     return b;
   }));
   const body = el("div");
-  $("game").replaceChildren(
+  const head = el("div", { className: "game-head" }, el("div", {},
     el("h2", { textContent: game.name }),
-    el("p", { className: "hint", textContent: [game.system, game.region].filter(Boolean).join(" · ") || "Not played yet" }),
-    tabBar, body);
+    el("p", { className: "hint", textContent: [game.system, game.region].filter(Boolean).join(" · ") || "Not played yet" })));
+  if (game.memory) {
+    const remove = el("button", { className: "danger", textContent: "Delete this game" });
+    remove.addEventListener("click", async () => {
+      const kept = game.profile ? ` Its profile (${game.profile.file}) stays: delete it from profiles/ if you do not want it.` : "";
+      if (!confirm(`Delete ${game.name}? Its translations and learned names are lost; played again, it starts from nothing.${kept}`)) return;
+      try {
+        await api("/api/games/" + encodeURIComponent(game.id), { method: "DELETE" });
+        game = null;
+        location.hash = "games";
+      } catch (error) { gameMessage(head, error.message, "bad"); }
+    });
+    head.append(remove);
+  }
+  $("game").replaceChildren(head, tabBar, body);
   if (gameTab === "translations") showTranslations(body);
   else if (gameTab === "names") showNames(body);
   else showProfile(body);
@@ -907,7 +923,14 @@ async function showTranslations(body) {
   const list = el("div", { className: "entries" });
   const more = el("button", { textContent: "Show more", style: "margin-top: 12px" });
   const status = el("div", { className: "row", style: "margin-top: 8px" });
-  body.append(bar, hint, status, list, more);
+  const exportPack = el("a", { className: "button", textContent: "Export a pack", download: "" });
+  const setExport = () => { exportPack.href = `/api/games/${encodeURIComponent(game.id)}/pack?` + new URLSearchParams({ lang: game.query.lang }); };
+  setExport();
+  const file = el("input", { type: "file", accept: ".json,application/json", className: "hidden" });
+  const importPack = el("button", { textContent: "Import a pack" });
+  const share = el("div", { className: "row", style: "margin-top: 24px" }, exportPack, importPack, file);
+  const shareHint = el("p", { className: "hint", textContent: "Share this game's translations and names with other players (in the language shown, or all of them), or add theirs: your corrections are never replaced, theirs replace the model's translations." });
+  body.append(bar, hint, status, list, more, share, shareHint);
 
   const selected = new Map();
   const updateRemove = () => { remove.disabled = !selected.size; remove.textContent = selected.size ? `Delete selected (${selected.size})` : "Delete selected"; };
@@ -968,7 +991,22 @@ async function showTranslations(body) {
       gameMessage(status, `${r.removed} deleted: they will be translated again.`, "ok");
     } catch (error) { gameMessage(status, error.message, "bad"); }
   });
-  lang.addEventListener("change", () => { game.query.lang = lang.value; load(false); });
+  importPack.addEventListener("click", () => file.click());
+  file.addEventListener("change", async () => {
+    if (!file.files.length) return;
+    try {
+      const pack = JSON.parse(await file.files[0].text());
+      const r = await api(`/api/games/${encodeURIComponent(game.id)}/pack`, { method: "POST", body: pack });
+      const m = r.merged;
+      game.names = (await api("/api/games/" + encodeURIComponent(game.id))).names;
+      games = (await api("/api/games")).games;
+      showGameList(game.id);
+      await load(false);
+      gameMessage(share, `Imported${r.name ? " from " + r.name : ""}: ${m.added} added, ${m.replaced} replaced, ${m.kept} already there, ${m.names} new name${m.names === 1 ? "" : "s"}.`, "ok");
+    } catch (error) { gameMessage(share, error instanceof SyntaxError ? "Not a translation pack (invalid JSON)." : error.message, "bad"); }
+    file.value = "";
+  });
+  lang.addEventListener("change", () => { game.query.lang = lang.value; setExport(); load(false); });
   let timer;
   search.addEventListener("input", () => { clearTimeout(timer); timer = setTimeout(() => { game.query.q = search.value; load(false); }, 250); });
   more.addEventListener("click", () => load(true));

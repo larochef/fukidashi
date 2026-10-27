@@ -11,7 +11,9 @@ use std::{
 use anyhow::{Context, bail};
 use axum::{
     Json, Router,
-    extract::{Path as UrlPath, Query, State},
+    extract::{DefaultBodyLimit, Path as UrlPath, Query, State},
+    http::header,
+    response::IntoResponse,
     routing::{get, post, put},
 };
 use serde::Deserialize;
@@ -20,7 +22,7 @@ use serde_json::{Value, json};
 use crate::{
     App,
     config::{self, Profile},
-    memory::{self, Entry, safe_name},
+    memory::{self, Entry, PACK_VERSION, Pack, safe_name},
     settings::{self, Edit},
     web::ApiError,
 };
@@ -31,10 +33,12 @@ const PROFILE_ID: &str = "profile:";
 pub fn routes() -> Router<Arc<App>> {
     Router::new()
         .route("/api/games", get(list))
-        .route("/api/games/{id}", get(detail))
+        .route("/api/games/{id}", get(detail).delete(delete_game))
         .route("/api/games/{id}/memory", get(translations).put(correct))
         .route("/api/games/{id}/memory/delete", post(forget))
         .route("/api/games/{id}/names", put(save_names))
+        // A long game's pack is a few MB.
+        .route("/api/games/{id}/pack", get(export_pack).post(import_pack).layer(DefaultBodyLimit::max(64 << 20)))
         .route("/api/games/{id}/profile", put(save_profile))
 }
 
@@ -172,8 +176,10 @@ async fn list(State(app): State<Arc<App>>) -> Json<Value> {
 }
 
 /// The game's directory name, or `None` for a game known only from its profile.
+/// The game's directory name, or `None` for a game known only from its
+/// profile (or an id that is no directory name: `..`, a path).
 fn memory_dir(id: &str) -> Option<&str> {
-    (!id.starts_with(PROFILE_ID)).then_some(id)
+    (!id.starts_with(PROFILE_ID) && !id.is_empty() && safe_name(id) == id).then_some(id)
 }
 
 /// The profile of a game, if it has one.
@@ -215,6 +221,21 @@ async fn detail(State(app): State<Arc<App>>, UrlPath(id): UrlPath<String>) -> Re
         "profile": profile,
         "styles": config::style_names(),
     })))
+}
+
+/// Forgets a game: its translations, learned names and label (its profile, a
+/// setting of its own, stays). Played again, it starts from nothing.
+async fn delete_game(State(app): State<Arc<App>>, UrlPath(id): UrlPath<String>) -> Result<Json<Value>, ApiError> {
+    let dir = memory_dir(&id).context("no memory for this game")?;
+    app.translator
+        .edit_game(dir, |path| match std::fs::remove_dir_all(path) {
+            Err(error) if error.kind() != std::io::ErrorKind::NotFound => Err(error),
+            _ => Ok(()),
+        })
+        .context("memory disabled")?
+        .context("cannot delete the game's memory")?;
+    tracing::info!(game = dir, "game deleted");
+    Ok(Json(json!({ "ok": true })))
 }
 
 #[derive(Deserialize)]
@@ -314,6 +335,66 @@ async fn save_names(State(app): State<Arc<App>>, UrlPath(id): UrlPath<String>, J
     app.translator.edit_game(dir, |path| memory::save_names(path, &names)).context("memory disabled")?.context("cannot save the names")?;
     tracing::info!(game = dir, names = names.len(), "learned names saved");
     Ok(Json(json!({ "names": names })))
+}
+
+#[derive(Deserialize)]
+struct PackQuery {
+    lang: Option<String>,
+}
+
+/// The game's translations (in one language, or all) and learned names, as a
+/// file to share.
+async fn export_pack(
+    State(app): State<Arc<App>>,
+    UrlPath(id): UrlPath<String>,
+    Query(query): Query<PackQuery>,
+) -> Result<impl IntoResponse, ApiError> {
+    let dir = memory_dir(&id).context("no memory for this game")?;
+    let path = app.translator.game_dir(dir).context("memory disabled")?;
+    let lang = query.lang.filter(|l| !l.is_empty());
+    let label = label(&app, dir);
+    let pack = Pack {
+        fukidashi: PACK_VERSION,
+        name: title(&label).name,
+        label,
+        names: memory::names(&path),
+        translations: memory::entries(&path).into_iter().filter(|e| lang.as_ref().is_none_or(|l| &e.lang == l)).collect(),
+    };
+    let file = format!("{dir}{}.fukidashi.json", lang.map(|l| format!("_{}", safe_name(&l))).unwrap_or_default());
+    let body = serde_json::to_string_pretty(&pack).map_err(anyhow::Error::from)?;
+    Ok((
+        [(header::CONTENT_TYPE, "application/json".to_owned()), (header::CONTENT_DISPOSITION, format!("attachment; filename=\"{file}\""))],
+        body,
+    ))
+}
+
+/// Adds a pack's translations and names to the game's memory (see
+/// [`memory::merge`]).
+async fn import_pack(State(app): State<Arc<App>>, UrlPath(id): UrlPath<String>, Json(pack): Json<Value>) -> Result<Json<Value>, ApiError> {
+    let dir = memory_dir(&id).context("no memory for this game")?;
+    let version = pack.get("fukidashi").and_then(Value::as_u64).context("not a Fukidashi translation pack")?;
+    if version > u64::from(PACK_VERSION) {
+        return Err(anyhow::anyhow!("this pack needs a newer version of Fukidashi").into());
+    }
+    let pack: Pack = serde_json::from_value(pack).context("invalid translation pack")?;
+    let name = pack.name.clone();
+    let merged = app
+        .translator
+        .edit_game(dir, |path| {
+            let mut entries = memory::entries(path);
+            let mut names = memory::names(path);
+            let merged = memory::merge(&mut entries, &mut names, pack);
+            if merged.added + merged.replaced > 0 {
+                memory::save_entries(path, &entries).context("cannot save the memory")?;
+            }
+            if merged.names > 0 {
+                memory::save_names(path, &names).context("cannot save the names")?;
+            }
+            anyhow::Ok(merged)
+        })
+        .context("memory disabled")??;
+    tracing::info!(game = dir, from = name, ?merged, "translation pack imported");
+    Ok(Json(json!({ "name": name, "merged": merged })))
 }
 
 #[derive(Deserialize)]
